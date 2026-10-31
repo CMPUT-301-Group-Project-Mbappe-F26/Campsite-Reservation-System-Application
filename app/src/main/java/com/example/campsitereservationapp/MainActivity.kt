@@ -1,3 +1,4 @@
+
 package com.example.campsitereservationapp
 
 import android.os.Bundle
@@ -11,9 +12,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.example.campsitereservationapp.auth.WelcomeScreen
+import com.example.campsitereservationapp.home.MainScreen
 import com.example.campsitereservationapp.model.User
-import com.example.campsitereservationapp.profile.EditProfileScreen
-import com.example.campsitereservationapp.profile.ProfileScreen
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawTheme
@@ -29,9 +29,9 @@ class MainActivity : ComponentActivity() {
                 val userService = remember { UserService() }
                 val scope = rememberCoroutineScope()
                 var user by remember { mutableStateOf<User?>(null) }
-                var editing by remember { mutableStateOf(false) }
                 var loading by remember { mutableStateOf(false) }
                 var checkingUser by remember { mutableStateOf(true) }
+
                 LaunchedEffect(Unit) {
                     if (FirebaseAuth.getInstance().currentUser != null) {
                         try {
@@ -85,40 +85,18 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
-                    editing -> {
-                        EditProfileScreen(
-                            user = user!!,
-                            saving = loading,
-                            onSave = { updatedUser ->
-                                loading = true
-                                scope.launch {
-                                    try {
-                                        userService.updateUser(updatedUser) // Save to Firestore
-                                        user = updatedUser
-                                        editing = false
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "Profile updated",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    } catch (e: Exception) {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "Could not save profile",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    } finally {
-                                        loading = false
-                                    }
-                                }
-                            },
-                            onCancel = { editing = false }
-                        )
-                    }
                     else -> {
-                        ProfileScreen(
+                        MainScreen(
                             user = user!!,
-                            onEditClick = { editing = true }
+                            onSaveProfile = { updatedUser ->
+                                userService.updateUser(updatedUser) // Save to Firestore
+                                user = updatedUser
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Profile updated",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         )
                     }
                 }
