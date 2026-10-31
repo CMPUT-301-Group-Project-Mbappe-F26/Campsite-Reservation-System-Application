@@ -12,12 +12,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.campsitereservationapp.ui.theme.CampsiteReservationAppTheme
+import android.util.Log
+import androidx.compose.runtime.LaunchedEffect
+import com.example.campsitereservationapp.service.UserService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            LaunchedEffect(Unit) {
+                try {
+                    val user = UserService().getOrCreateUser()
+                    Log.d("FirebaseTest", "User saved: ${user.id}")
+                } catch (e: Exception) {
+                    Log.e("FirebaseTest", "Firebase failed", e)
+                }
+            }
             CampsiteReservationAppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Greeting(
