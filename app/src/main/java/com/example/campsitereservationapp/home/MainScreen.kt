@@ -34,6 +34,8 @@ import com.example.campsitereservationapp.campsite.CampsiteDetailsScreen
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.profile.EditProfileScreen
 import com.example.campsitereservationapp.profile.ProfileScreen
+import com.example.campsitereservationapp.reservation.MyReservationsScreen
+import com.example.campsitereservationapp.reservation.ReservationDetailsScreen
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import kotlinx.coroutines.launch
@@ -52,6 +54,7 @@ fun MainScreen(
     var registering by rememberSaveable { mutableStateOf(false) }
     var showingCampsites by rememberSaveable { mutableStateOf(false) }
     var campsiteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var reservationId by rememberSaveable { mutableStateOf<String?>(null) }
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -72,11 +75,12 @@ fun MainScreen(
         }
         error = ""
     }
+    BackHandler(enabled = reservationId != null) { reservationId = null }
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         containerColor = PinedrawColors.Background,
         bottomBar = {
-            if (!editing && !hostMode) {
+            if (!editing && !hostMode && reservationId == null) {
                 PinedrawNavBar(
                     tabs = listOf("Discover", "Lotteries", "Extra", "Profile"),
                     selectedTab = selectedTab,
@@ -151,6 +155,11 @@ fun MainScreen(
                     )
                 }
 
+                reservationId != null -> ReservationDetailsScreen(
+                    reservationId = reservationId!!,
+                    onBack = { reservationId = null }
+                )
+
                 selectedTab == 0 -> HomeScreen(
                     user = user,
                     onProfileClick = { selectedTab = 3 } // Open Profile tab
@@ -159,9 +168,8 @@ fun MainScreen(
                     "Lotteries",
                     "Your campsite draws will appear here."
                 )
-                selectedTab == 2 -> EmptyTab(
-                    "Extra",
-                    "This is an extra tab if needed"
+                selectedTab == 2 -> MyReservationsScreen(
+                    onReservationClick = { reservationId = it }
                 )
                 else -> ProfileScreen(
                     user = user,
