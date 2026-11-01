@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 
+// Shows the sign-in options and guest entry button.
 @Composable
 fun WelcomeScreen(
     onGoogleClick: () -> Unit,

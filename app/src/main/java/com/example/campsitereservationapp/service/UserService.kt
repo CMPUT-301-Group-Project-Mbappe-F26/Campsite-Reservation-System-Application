@@ -8,6 +8,7 @@ class UserService {
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseFirestore.getInstance()
 
+    // Loads the current profile or creates one for a guest.
     suspend fun getOrCreateUser(): User {
         val currentUser = auth.currentUser
             ?: auth.signInAnonymously().await().user
@@ -20,6 +21,7 @@ class UserService {
         return newUser
     }
 
+    // Saves profile changes for the signed-in user.
     suspend fun updateUser(user: User) {
         val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
         require(user.id == uid)

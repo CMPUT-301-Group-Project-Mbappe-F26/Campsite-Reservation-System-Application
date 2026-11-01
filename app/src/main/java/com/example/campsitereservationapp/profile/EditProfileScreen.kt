@@ -10,6 +10,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +31,7 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
 
 private enum class Field { NAME, EMAIL, PHONE }
 
+// Lets the user edit and save their profile details.
 @Composable
 fun EditProfileScreen(
     user: User,
@@ -74,12 +77,10 @@ fun EditProfileScreen(
                     .clickable(enabled = !saving) { onCancel() },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "‹",
-                    color = PinedrawColors.Text,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(bottom = 3.dp)
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back", tint = PinedrawColors.Text,
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
@@ -241,7 +242,7 @@ fun EditProfileScreen(
     }
 }
 
-// This profile field is a labelled input field which shows a app theme border and message when error is set
+// Shows a profile input and its validation message.
 @Composable
 private fun ProfileField(
     label: String,
@@ -285,7 +286,7 @@ private fun ProfileField(
     if (isError) {
         Spacer(Modifier.height(8.dp))
         Text(
-            text = error ?: "",
+            text = error,
             color = PinedrawColors.Coral,
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,

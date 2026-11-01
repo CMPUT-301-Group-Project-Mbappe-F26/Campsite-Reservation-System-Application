@@ -44,17 +44,40 @@ object PinedrawSpacing {
 private val pinedrawScheme = darkColorScheme(
     primary = PinedrawColors.Lime,
     onPrimary = PinedrawColors.Ink,
+    primaryContainer = PinedrawColors.Lime,
+    onPrimaryContainer = PinedrawColors.Ink,
     secondary = PinedrawColors.Teal,
     onSecondary = PinedrawColors.Ink,
+    secondaryContainer = PinedrawColors.Lime,
+    onSecondaryContainer = PinedrawColors.Ink,
+    tertiary = PinedrawColors.Amber,
+    onTertiary = PinedrawColors.Ink,
+    tertiaryContainer = PinedrawColors.Surface,
+    onTertiaryContainer = PinedrawColors.Amber,
     background = PinedrawColors.Background,
     onBackground = PinedrawColors.Text,
     surface = PinedrawColors.Surface,
     onSurface = PinedrawColors.Text,
+    surfaceTint = Color.Transparent,
+    surfaceDim = PinedrawColors.Background,
+    surfaceBright = Color(0xFF1E3A26),
+    surfaceContainerLowest = PinedrawColors.Background,
+    surfaceContainerLow = PinedrawColors.Surface,
+    surfaceContainer = PinedrawColors.Surface,
+    surfaceContainerHigh = Color(0xFF193223),
+    surfaceContainerHighest = Color(0xFF203E2C),
+    inverseSurface = PinedrawColors.Text,
+    inverseOnSurface = PinedrawColors.Ink,
+    inversePrimary = Color(0xFF2E6B20),
     surfaceVariant = PinedrawColors.Glass,
     onSurfaceVariant = PinedrawColors.TextSecondary,
     error = PinedrawColors.Coral,
     onError = PinedrawColors.Ink,
-    outline = PinedrawColors.TextMuted
+    errorContainer = PinedrawColors.Coral.copy(alpha = 0.15f),
+    onErrorContainer = PinedrawColors.Coral,
+    outline = PinedrawColors.TextMuted,
+    outlineVariant = PinedrawColors.TextMuted.copy(alpha = 0.3f),
+    scrim = Color.Black
 )
 
 private val pinedrawTypography = Typography(
@@ -74,6 +97,7 @@ private val pinedrawShapes = Shapes(
     extraLarge = RoundedCornerShape(32.dp)
 )
 
+// Applies the Pinedraw colours, fonts, and rounded shapes.
 @Composable
 fun PinedrawTheme(content: @Composable () -> Unit) {
     MaterialTheme(

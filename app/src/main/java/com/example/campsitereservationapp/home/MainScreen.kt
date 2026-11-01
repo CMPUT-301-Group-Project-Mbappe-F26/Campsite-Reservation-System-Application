@@ -1,21 +1,36 @@
 package com.example.campsitereservationapp.home
 
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.campsitereservationapp.campsite.CreateCampsiteScreen
+import com.example.campsitereservationapp.campsite.CampsiteRegistrationViewModel
+import com.example.campsitereservationapp.campsite.HostDashboardScreen
+import com.example.campsitereservationapp.campsite.MyCampsitesScreen
+import com.example.campsitereservationapp.campsite.CampsiteDetailsScreen
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.profile.EditProfileScreen
 import com.example.campsitereservationapp.profile.ProfileScreen
@@ -23,22 +38,45 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import kotlinx.coroutines.launch
 
+// Handles the main tabs and host screen navigation.
 @Composable
 fun MainScreen(
     user: User,
     onSaveProfile: suspend (User) -> Unit
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    var hostMode by rememberSaveable { mutableStateOf(false) }
+    var registering by rememberSaveable { mutableStateOf(false) }
+    var showingCampsites by rememberSaveable { mutableStateOf(false) }
+    var campsiteId by rememberSaveable { mutableStateOf<String?>(null) }
+    val registration: CampsiteRegistrationViewModel = viewModel()
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
+    LaunchedEffect(registration.createdId) {
+        if (registration.createdId != null) {
+            registering = false
+            showingCampsites = true
+            campsiteId = null
+            Toast.makeText(context, "Campsite created successfully", Toast.LENGTH_LONG).show()
+            registration.reset()
+        }
+    }
+    BackHandler(enabled = hostMode && !registering) {
+        when {
+            campsiteId != null -> campsiteId = null
+            showingCampsites -> showingCampsites = false
+            else -> hostMode = false
+        }
+        error = ""
+    }
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         containerColor = PinedrawColors.Background,
         bottomBar = {
-            if (!editing) {
+            if (!editing && !hostMode) {
                 PinedrawNavBar(
                     tabs = listOf("Discover", "Lotteries", "Extra", "Profile"),
                     selectedTab = selectedTab,
@@ -53,6 +91,43 @@ fun MainScreen(
                 .padding(padding)
         ) {
             when {
+                registering -> CreateCampsiteScreen(
+                    saving = registration.saving,
+                    saveError = registration.error,
+                    onCancel = {
+                        if (!registration.saving) {
+                            registering = false
+                            showingCampsites = false
+                            registration.reset()
+                        }
+                    },
+                    onCreate = registration::create
+                )
+                hostMode && campsiteId != null -> CampsiteDetailsScreen(
+                    campsiteId = campsiteId!!,
+                    onBack = { campsiteId = null }
+                )
+                hostMode && showingCampsites -> MyCampsitesScreen(
+                    onBack = { showingCampsites = false },
+                    onCampsiteClick = { campsiteId = it },
+                    onRegisterClick = {
+                        registration.reset()
+                        showingCampsites = false
+                        registering = true
+                    }
+                )
+                hostMode -> HostDashboardScreen(
+                    onBack = {
+                        hostMode = false
+                        error = ""
+                    },
+                    onRegisterClick = {
+                        registration.reset()
+                        showingCampsites = false
+                        registering = true
+                    },
+                    onMyCampsitesClick = { showingCampsites = true }
+                )
                 editing -> {
                     EditProfileScreen(
                         user = user,
@@ -66,7 +141,7 @@ fun MainScreen(
                                 try {
                                     onSaveProfile(updatedUser) // Save through UserService
                                     editing = false
-                                } catch (e: Exception) {
+                                } catch (_: Exception) {
                                     error = "Could not save profile"
                                 } finally {
                                     saving = false
@@ -90,7 +165,8 @@ fun MainScreen(
                 )
                 else -> ProfileScreen(
                     user = user,
-                    onEditClick = { editing = true }
+                    onEditClick = { editing = true },
+                    onHostClick = { hostMode = true }
                 )
             }
 
@@ -110,7 +186,7 @@ fun MainScreen(
     }
 }
 
-// Floating pill-shaped tab bar; the selected tab is highlighted in lime
+// Shows the bottom navigation tabs.
 @Composable
 private fun PinedrawNavBar(
     tabs: List<String>,
@@ -133,12 +209,13 @@ private fun PinedrawNavBar(
                 .padding(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val icons = listOf(Icons.Default.Search, Icons.Default.Star, Icons.Default.MoreVert, Icons.Default.Person)
             tabs.forEachIndexed { index, title ->
                 val selected = selectedTab == index
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(44.dp)
+                        .height(56.dp)
                         .clip(CircleShape)
                         .then(
                             if (selected) Modifier.background(PinedrawColors.PrimaryGradient)
@@ -147,19 +224,27 @@ private fun PinedrawNavBar(
                         .clickable { onTabSelected(index) },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = title,
-                        color = if (selected) PinedrawColors.Ink else PinedrawColors.TextSecondary,
-                        fontSize = 13.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                        maxLines = 1
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            icons[index], contentDescription = null, modifier = Modifier.size(20.dp),
+                            tint = if (selected) PinedrawColors.Ink else PinedrawColors.TextSecondary
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = title,
+                            color = if (selected) PinedrawColors.Ink else PinedrawColors.TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
     }
 }
 
+// Shows a message for a tab that is not ready yet.
 @Composable
 private fun EmptyTab(title: String, message: String) {
     Box(

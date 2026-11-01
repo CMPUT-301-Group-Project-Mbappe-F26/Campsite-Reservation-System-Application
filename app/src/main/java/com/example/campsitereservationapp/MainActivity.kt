@@ -1,4 +1,3 @@
-
 package com.example.campsitereservationapp
 
 import android.os.Bundle
@@ -21,6 +20,7 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    // Sets up the app screens and loads the signed-in profile.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -36,7 +36,7 @@ class MainActivity : ComponentActivity() {
                     if (FirebaseAuth.getInstance().currentUser != null) {
                         try {
                             user = userService.getOrCreateUser() // Load saved profile
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             Toast.makeText(
                                 this@MainActivity,
                                 "Could not load profile",
@@ -72,7 +72,7 @@ class MainActivity : ComponentActivity() {
                                 scope.launch {
                                     try {
                                         user = userService.getOrCreateUser()
-                                    } catch (e: Exception) {
+                                    } catch (_: Exception) {
                                         Toast.makeText(
                                             this@MainActivity,
                                             "Could not continue as guest",

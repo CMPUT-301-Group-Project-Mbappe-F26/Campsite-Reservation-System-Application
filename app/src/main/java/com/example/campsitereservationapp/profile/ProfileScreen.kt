@@ -8,6 +8,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,10 +30,12 @@ import androidx.compose.ui.unit.sp
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 
+// Shows account information and the switch to host mode.
 @Composable
 fun ProfileScreen(
     user: User,
-    onEditClick: () -> Unit
+    onEditClick: () -> Unit,
+    onHostClick: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -100,6 +111,7 @@ fun ProfileScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable { onHostClick() }
                 .clip(RoundedCornerShape(24.dp))
                 .background(
                     Brush.horizontalGradient(listOf(Color(0xFF3A2F17), Color(0xFF1C2318)))
@@ -108,6 +120,8 @@ fun ProfileScreen(
                 .padding(horizontal = 18.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(Icons.Default.Home, contentDescription = null, tint = PinedrawColors.Amber)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = "Switch to Host mode",
@@ -126,31 +140,27 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(24.dp))
-
         SectionLabel("ACCOUNT")
-
         OptionGroup {
-            ProfileOption("Personal information", onClick = onEditClick)
+            ProfileOption("Personal information", Icons.Default.Person, onClick = onEditClick)
             OptionDivider()
-            ProfileOption("Notifications") {}
+            ProfileOption("Notifications", Icons.Default.Notifications) {}
             OptionDivider()
-            ProfileOption("Policy & guidelines") {}
+            ProfileOption("Policy & guidelines", Icons.Default.Info) {}
             OptionDivider()
-            ProfileOption("Sign-in & security") {}
+            ProfileOption("Sign-in & security", Icons.Default.Lock) {}
         }
 
         Spacer(Modifier.height(24.dp))
-
         SectionLabel("SETTINGS")
-
         OptionGroup {
-            ProfileOption("Settings") {}
+            ProfileOption("Settings", Icons.Default.Settings) {}
         }
-
         Spacer(Modifier.height(16.dp))
     }
 }
 
+// Shows a heading above a group of profile options.
 @Composable
 private fun SectionLabel(text: String) {
     Text(
@@ -163,6 +173,7 @@ private fun SectionLabel(text: String) {
     )
 }
 
+// Groups profile options inside a rounded card.
 @Composable
 private fun OptionGroup(content: @Composable ColumnScope.() -> Unit) {
     Column(
@@ -175,9 +186,11 @@ private fun OptionGroup(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
+// Shows a clickable profile option.
 @Composable
 private fun ProfileOption(
     title: String,
+    icon: ImageVector,
     onClick: () -> Unit
 ) {
     Row(
@@ -187,6 +200,8 @@ private fun ProfileOption(
             .padding(horizontal = 18.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = PinedrawColors.TextSecondary)
+        Spacer(Modifier.width(14.dp))
         Text(
             text = title,
             color = PinedrawColors.Text,
@@ -198,16 +213,16 @@ private fun ProfileOption(
     }
 }
 
+// Shows the arrow beside a profile option.
 @Composable
 private fun Chevron(color: Color) {
-    Text(
-        text = "›",
-        color = color,
-        fontSize = 26.sp,
-        fontWeight = FontWeight.Medium
+    Icon(
+        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+        contentDescription = null, tint = color, modifier = Modifier.size(22.dp)
     )
 }
 
+// Separates profile options with a line.
 @Composable
 private fun OptionDivider() {
     HorizontalDivider(

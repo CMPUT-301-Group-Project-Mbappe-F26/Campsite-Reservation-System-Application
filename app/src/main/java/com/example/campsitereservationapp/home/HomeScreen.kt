@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 
+// Shows the welcome screen and profile shortcut.
 @Composable
 fun HomeScreen(
     user: User,
