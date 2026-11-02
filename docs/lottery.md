@@ -47,7 +47,7 @@ User and campsite IDs reference separate documents; their full objects are not e
 | `stayEndDate` | `String` | End of the offered stay period. |
 | `registered` | `List<String>` | User IDs registered for the waiting list. |
 | `pending` | `List<String>` | Selected user IDs awaiting a reservation decision. |
-| `booked` | `List<String>` | User IDs with a confirmed reservation through this lottery. |
+| `booked` | `List<Reservation>` | Reservations made through this lottery. |
 | `useMaxCapacity` | `Boolean` | Whether the owner selected the Max checkbox. |
 
 String fields default to empty strings, winner count to zero, lists to empty lists,
@@ -76,11 +76,15 @@ The UI displays start dates as 00:00 and end dates as 11:59 on the selected date
 The model stores only dates, without a time or time zone; there is no automatic
 opening, closing, or winner draw implemented yet.
 
-`registered`, `pending`, and `booked` are stored as arrays of Firebase user IDs.
-New lotteries start with all three arrays empty. Their names describe the intended
-participant states; joining, drawing winners, booking, and moving users between
-these lists are not implemented by the creation flow.
+`registered` and `pending` are stored as arrays of Firebase user IDs, and `booked`
+as an array of reservations. New lotteries start with all three arrays empty. Their
+names describe the intended participant states; joining, drawing winners, booking,
+and moving users between these lists are not implemented by the creation flow.
 
-Existing-reservation conflict checks, enforcement of campsite season/available
-weekdays, and deployed Firestore security rules are outside the current creation
+`ReservationService.reserve` moves a winner from `pending` to `booked` in a Firestore
+transaction. Confirmed reservations cannot exceed `numberOfWinners`, and each night
+can only be booked once. A stay can check out on the day another stay checks in.
+
+Enforcement of campsite season/available weekdays at reservation time is in
+`reservationError`. Deployed Firestore security rules are outside the current creation
 implementation. The data class itself performs no validation or state transitions.
