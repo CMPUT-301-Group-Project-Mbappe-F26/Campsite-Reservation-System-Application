@@ -6,14 +6,17 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 
 /**
- * Creates [Lottery] documents in Firestore using the signed-in owner's identity.
+ * Creates and draws [Lottery] documents in Firestore using the signed-in owner's identity.
  *
  * The model is stored at `lotteries/{id}`. Ownership and current campsite capacity
- * are checked in the write transaction. This service does not draw winners,
- * schedule registration/booking windows, or update participant lists.
+ * are checked in the creation transaction. [drawLottery] saves initial winners to
+ * pending after registration closes. This service does not schedule automatic draws
+ * or manage registration and reservation actions.
  */
 class LotteryService {
     private val db = FirebaseFirestore.getInstance()
@@ -69,6 +72,108 @@ class LotteryService {
         }.await()
         return document.id
     }
+
+    /**
+     * Loads a lottery, draws its configured winner count, and saves pending winners atomically.
+     *
+     * The caller must be signed in as both the lottery and campsite owner, including
+     * when using an anonymous guest account. Registration remains open through
+     * 23:59 on its end date in `America/Edmonton`; an initial draw is allowed from
+     * midnight the following day. This Android implementation uses the device clock.
+     *
+     * Reads the latest registration list inside a transaction and updates only
+     * `pending` and `drawCompleted`, preserving all other fields. A completed draw
+     * returns the current stored lottery without selecting again, even if pending
+     * is empty or a previously selected entrant has since booked. Concurrent calls
+     * are resolved by Firestore transaction retries.
+     *
+     * @param lotteryId Single Firestore document ID of the lottery to draw.
+     * @return The lottery with committed pending winners, or its existing completed state.
+     * @throws IllegalArgumentException If the ID is invalid or stored draw data is invalid.
+     * @throws IllegalStateException If signed out, ownership fails, registration is open,
+     * or an unmarked lottery already contains pending or booked users.
+     * Firebase failures and cancellation propagate to the caller. This function needs
+     * network access and does not install a timer or trigger itself automatically.
+     */
+    suspend fun drawLottery(lotteryId: String): Lottery {
+        require(lotteryId.isNotBlank() && '/' !in lotteryId) { "Provide a valid lottery document ID." }
+        val uid = auth.currentUser?.uid ?: error("Please sign in before drawing a lottery.")
+        val document = db.collection("lotteries").document(lotteryId)
+        return db.runTransaction { transaction ->
+            val snapshot = transaction.get(document)
+            val lottery = snapshot.toObject(Lottery::class.java)?.copy(id = snapshot.id)
+                ?: error("This lottery is no longer available.")
+            check(lottery.ownerId == uid) { "This lottery does not belong to your account." }
+            require(lottery.campsiteId.isNotBlank() && '/' !in lottery.campsiteId) {
+                "This lottery has no valid campsite."
+            }
+            val site = transaction.get(db.collection("campsites").document(lottery.campsiteId))
+            check(site.exists() && site.getString("ownerId") == uid && auth.currentUser?.uid == uid) {
+                "This campsite does not belong to your account."
+            }
+            val drawn = prepareLotteryDraw(lottery, System.currentTimeMillis())
+            if (!lottery.drawCompleted) {
+                transaction.update(document, mapOf(
+                    "pending" to drawn.pending,
+                    "drawCompleted" to true
+                ))
+            }
+            drawn
+        }.await()
+    }
+}
+
+/**
+ * Prepares the initial draw from a stored lottery without performing database operations.
+ *
+ * Already completed draws are returned unchanged. Unmarked lotteries with pending
+ * or booked users are rejected to avoid overwriting older results. An empty entrant
+ * list still produces a completed draw, so retries cannot draw a later registration.
+ *
+ * @param lottery Latest lottery snapshot read by the service transaction.
+ * @param nowMillis Current epoch milliseconds, supplied explicitly for deadline tests.
+ * @return A copy with selected pending winners and the completion marker, or the existing result.
+ * @throws IllegalArgumentException If the winner count or registration end date is invalid.
+ * @throws IllegalStateException If registration is still open or existing participants would be overwritten.
+ */
+internal fun prepareLotteryDraw(lottery: Lottery, nowMillis: Long): Lottery {
+    if (lottery.drawCompleted) return lottery
+    require(lottery.numberOfWinners > 0) { "The lottery must have a positive winner count." }
+    check(lottery.pending.isEmpty() && lottery.booked.isEmpty()) {
+        "This lottery already has pending or booked users. Its draw status must be reviewed before drawing."
+    }
+    check(nowMillis >= lotteryDrawOpensAt(lottery.registrationEndDate)) {
+        "Registration must close before drawing. Try after 23:59 Alberta time on the registration end date."
+    }
+    return lottery.copy(pending = lottery.draw(lottery.numberOfWinners), drawCompleted = true)
+}
+
+/**
+ * Converts the first allowed draw time to epoch milliseconds using Alberta local time.
+ *
+ * The entire registration end date remains available to entrants. Draws start at
+ * 00:00 the following day in `America/Edmonton`, respecting daylight saving changes.
+ * Calendar-day addition is used because a local day can be 23 or 25 hours long.
+ *
+ * @param registrationEndDate Strict `yyyy-MM-dd` registration end date.
+ * @return Midnight immediately after that date, as epoch milliseconds.
+ * @throws IllegalArgumentException If the date is missing, malformed, or impossible.
+ */
+internal fun lotteryDrawOpensAt(registrationEndDate: String): Long {
+    val zone = TimeZone.getTimeZone("America/Edmonton")
+    val format = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
+        isLenient = false
+        timeZone = zone
+    }
+    val date = runCatching { format.parse(registrationEndDate) }.getOrNull()
+    require(registrationEndDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) &&
+        date != null && format.format(date) == registrationEndDate) {
+        "The lottery must have a valid registration end date."
+    }
+    return Calendar.getInstance(zone, Locale.ROOT).apply {
+        time = date
+        add(Calendar.DAY_OF_MONTH, 1)
+    }.timeInMillis
 }
 
 /**

@@ -1,0 +1,15 @@
+{
+  "name": "campsite-lottery-scheduler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test",
+    "dry-run": "node src/run.js --dry-run",
+    "draw": "node src/run.js --apply"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "9.4.0"
+  }
+}

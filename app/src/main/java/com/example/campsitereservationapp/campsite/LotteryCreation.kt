@@ -172,7 +172,7 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
                 )
             }
             Text(
-                "Start dates begin at 00:00. End dates end at 11:59 on the selected date.",
+                "Start dates begin at 00:00. End dates end at 23:59 (11:59 PM) on the selected date. All times are Alberta time.",
                 style = MaterialTheme.typography.bodySmall,
                 color = PinedrawColors.TextSecondary
             )

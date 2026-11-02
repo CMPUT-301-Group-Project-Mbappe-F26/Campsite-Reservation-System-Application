@@ -1,0 +1,107 @@
+package com.example.campsitereservationapp.service
+
+import com.example.campsitereservationapp.model.Lottery
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.time.Instant
+
+class LotteryDrawPreparationTest {
+    private val lottery = Lottery(
+        numberOfWinners = 2, registrationEndDate = "2027-04-07",
+        registered = listOf("alice", "bob", "charlie")
+    )
+    private val deadline = Instant.parse("2027-04-08T06:00:00Z").toEpochMilli()
+
+    @Test
+    fun registrationRemainsOpenThroughTheLastMinuteInAlberta() {
+        assertThrows(IllegalStateException::class.java) { prepareLotteryDraw(lottery, deadline - 1) }
+    }
+
+    @Test
+    fun midnightAfterRegistrationDrawsAndMarksCompletionWithoutChangingOriginal() {
+        val drawn = prepareLotteryDraw(lottery, deadline)
+        assertTrue(drawn.drawCompleted)
+        assertEquals(2, drawn.pending.size)
+        assertTrue(lottery.registered.containsAll(drawn.pending))
+        assertEquals(drawn.pending.size, drawn.pending.distinct().size)
+        assertEquals(lottery.registered, drawn.registered)
+        assertEquals(lottery.booked, drawn.booked)
+        assertFalse(lottery.drawCompleted)
+        assertTrue(lottery.pending.isEmpty())
+    }
+
+    @Test
+    fun laterRetryReturnsTheSavedDraw() {
+        val drawn = prepareLotteryDraw(lottery, deadline)
+        assertEquals(drawn, prepareLotteryDraw(drawn, deadline + 86400000L))
+    }
+
+    @Test
+    fun completedDrawIsPreservedAfterWinnersBook() {
+        val booked = lottery.copy(drawCompleted = true, pending = emptyList(), booked = listOf("alice", "bob"))
+        assertEquals(booked, prepareLotteryDraw(booked, deadline))
+    }
+
+    @Test
+    fun noEntrantsStillProducesACompletedDrawThatCannotRunAgain() {
+        val drawn = prepareLotteryDraw(lottery.copy(registered = emptyList()), deadline)
+        assertTrue(drawn.drawCompleted)
+        assertTrue(drawn.pending.isEmpty())
+        val changed = drawn.copy(registered = listOf("late-user"))
+        assertEquals(changed, prepareLotteryDraw(changed, deadline + 1))
+    }
+
+    @Test
+    fun fewerEntrantsThanWinnersReturnsEveryEntrant() {
+        val drawn = prepareLotteryDraw(lottery.copy(numberOfWinners = 5), deadline)
+        assertEquals(lottery.registered, drawn.pending)
+    }
+
+    @Test
+    fun existingParticipantStatesWithoutCompletionMarkerAreNotOverwritten() {
+        assertThrows(IllegalStateException::class.java) {
+            prepareLotteryDraw(lottery.copy(pending = listOf("alice")), deadline)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            prepareLotteryDraw(lottery.copy(booked = listOf("alice")), deadline)
+        }
+    }
+
+    @Test
+    fun invalidWinnerCountsAreRejected() {
+        for (count in listOf(0, -1)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                prepareLotteryDraw(lottery.copy(numberOfWinners = count), deadline)
+            }
+        }
+    }
+
+    @Test
+    fun missingMalformedAndImpossibleDatesAreRejected() {
+        for (date in listOf("", "2027-4-07", "2027-02-29", "2027-04-07extra")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                prepareLotteryDraw(lottery.copy(registrationEndDate = date), deadline)
+            }
+        }
+    }
+
+    @Test
+    fun closingInstantUsesAlbertaTimeInsteadOfDeviceDefaultTimeZone() {
+        assertEquals(deadline, lotteryDrawOpensAt("2027-04-07"))
+    }
+
+    @Test
+    fun springDaylightSavingTransitionUsesCalendarDayInsteadOf24Hours() {
+        assertEquals(Instant.parse("2027-03-15T06:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2027-03-14"))
+        assertEquals(23L * 60 * 60 * 1000, lotteryDrawOpensAt("2027-03-14") - lotteryDrawOpensAt("2027-03-13"))
+    }
+
+    @Test
+    fun fallDaylightSavingTransitionUsesCalendarDayInsteadOf24Hours() {
+        assertEquals(Instant.parse("2027-11-08T07:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2027-11-07"))
+        assertEquals(25L * 60 * 60 * 1000, lotteryDrawOpensAt("2027-11-07") - lotteryDrawOpensAt("2027-11-06"))
+    }
+}
