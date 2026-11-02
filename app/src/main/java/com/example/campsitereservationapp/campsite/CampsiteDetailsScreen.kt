@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +47,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
     var loading by remember(campsiteId, ownerId) { mutableStateOf(true) }
     var error by remember(campsiteId, ownerId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
+    var creatingLottery by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
 
     LaunchedEffect(campsiteId, ownerId, refresh) {
         loading = true
@@ -63,6 +66,12 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
         } finally {
             loading = false
         }
+    }
+
+    val ownedCampsite = campsite?.takeIf { ownerId != null && it.ownerId == ownerId }
+    if (creatingLottery && !loading && error.isEmpty() && ownedCampsite != null) {
+        LotteryCreation(campsite = ownedCampsite, onCancel = { creatingLottery = false })
+        return
     }
 
     Column(
@@ -88,6 +97,17 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                     CampsitePhoto(site.imageUrls.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         Text(site.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
+                        Button(
+                            onClick = { creatingLottery = true },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = CircleShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PinedrawColors.Lime,
+                                contentColor = PinedrawColors.Ink
+                            )
+                        ) {
+                            Text("Create Lottery", fontWeight = FontWeight.Bold)
+                        }
                         Surface(
                             color = if (site.published) PinedrawColors.Lime.copy(alpha = 0.15f) else PinedrawColors.Glass,
                             shape = MaterialTheme.shapes.large
