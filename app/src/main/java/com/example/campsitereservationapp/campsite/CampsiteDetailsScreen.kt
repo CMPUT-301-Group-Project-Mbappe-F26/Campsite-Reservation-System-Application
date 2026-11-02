@@ -2,6 +2,7 @@ package com.example.campsitereservationapp.campsite
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,14 +23,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
-import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
@@ -36,7 +39,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 
-// Loads and shows a campsite belonging to the current owner.
+// Loads and shows a campsite, with extra options when the signed-in user owns it.
 @Composable
 fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
     val service = remember { CampsiteService() }
@@ -54,8 +57,8 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
             check(ownerId != null) { "Not signed in" }
             val result = withTimeoutOrNull(20000) { service.getCampsite(campsiteId) }
             if (result == null) error = "This campsite is unavailable or could not be loaded. Please try again."
-            else if (result.ownerId != ownerId || FirebaseAuth.getInstance().currentUser?.uid != ownerId)
-                error = "This campsite does not belong to your account."
+            else if (!result.published && !result.isOwnedBy(ownerId))
+                error = "This campsite is unavailable or could not be loaded. Please try again."
             else campsite = result
         } catch (_: Exception) {
             coroutineContext.ensureActive() // Stop normally when leaving the screen.
@@ -133,12 +136,90 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                             Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
                             DetailRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
                             if (site.requireRulesAcceptance) Text("Entrants must accept the rules.", color = PinedrawColors.TextMuted)
+                            if (site.isOwnedBy(ownerId)) OwnerPolicyEditor(
+                                campsiteId = site.id,
+                                rules = site.rules,
+                                onSaved = { campsite = site.copy(rules = it) }
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+// Lets the owner edit the campsite policy, saving only after they confirm.
+@Composable
+private fun OwnerPolicyEditor(campsiteId: String, rules: String, onSaved: (String) -> Unit) {
+    val service = remember { CampsiteService() }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var editing by rememberSaveable(campsiteId) { mutableStateOf(false) }
+    var draft by rememberSaveable(campsiteId) { mutableStateOf(rules) }
+    var confirming by rememberSaveable(campsiteId) { mutableStateOf(false) }
+    var saving by remember(campsiteId) { mutableStateOf(false) }
+    var error by remember(campsiteId) { mutableStateOf("") }
+
+    if (!editing) {
+        TextButton(onClick = {
+            draft = rules
+            error = ""
+            editing = true
+        }) { Text("Edit policy") }
+        return
+    }
+
+    OutlinedTextField(
+        value = draft, onValueChange = { draft = it }, enabled = !saving,
+        label = { Text("Rules for entrants") }, modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium, minLines = 4,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = PinedrawColors.Glass, unfocusedContainerColor = PinedrawColors.Glass,
+            unfocusedBorderColor = Color.White.copy(alpha = 0.08f)
+        )
+    )
+    if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = { editing = false }, enabled = !saving) { Text("Cancel") }
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = { confirming = true }, enabled = !saving, shape = MaterialTheme.shapes.large) {
+            Text(if (saving) "Saving..." else "Save", fontWeight = FontWeight.Bold)
+        }
+    }
+
+    if (confirming) AlertDialog(
+        onDismissRequest = { confirming = false },
+        title = { Text("Are you sure?") },
+        text = { Text("Entrants will see this policy for your campsite.") },
+        dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+        confirmButton = {
+            TextButton(onClick = {
+                confirming = false
+                saving = true
+                error = ""
+                scope.launch {
+                    try {
+                        val saved = withTimeoutOrNull(20000) {
+                            service.updateCampsitePolicy(campsiteId, draft)
+                            true
+                        }
+                        if (saved == null) error = "Could not save the policy. Please try again."
+                        else {
+                            editing = false
+                            onSaved(draft.trim())
+                            Toast.makeText(context, "Policy updated", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (_: Exception) {
+                        coroutineContext.ensureActive() // Stop normally when leaving the screen.
+                        error = "Could not save the policy. Please try again."
+                    } finally {
+                        saving = false
+                    }
+                }
+            }) { Text("Proceed") }
+        }
+    )
 }
 
 // Groups campsite details inside a rounded card.
