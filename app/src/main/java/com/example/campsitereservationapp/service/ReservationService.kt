@@ -4,6 +4,7 @@ import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.activeReservations
+import com.example.campsitereservationapp.model.declineError
 import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.model.reservationError
 import com.google.firebase.auth.FirebaseAuth
@@ -84,6 +85,25 @@ class ReservationService {
                 "pending" to lottery.pending - uid,
                 "booked" to lottery.booked + reservation
             ))
+            null
+        }.await()
+    }
+
+    /**
+     * Gives up the signed-in entrant's spot by removing them from the lottery's pending list.
+     * Once removed they can no longer reserve with that win. The redraw (US 02.05.01) should start here.
+     *
+     * @return A message explaining why the spot could not be declined, or null on success.
+     */
+    suspend fun decline(lotteryId: String): String? {
+        val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
+        val lotteryDoc = db.collection("lotteries").document(lotteryId)
+        return db.runTransaction { transaction ->
+            val lottery = transaction.get(lotteryDoc).toObject(Lottery::class.java)
+                ?: return@runTransaction "This lottery is no longer available."
+            val error = declineError(lottery, uid)
+            if (error != null) return@runTransaction error
+            transaction.update(lotteryDoc, "pending", lottery.pending - uid)
             null
         }.await()
     }
