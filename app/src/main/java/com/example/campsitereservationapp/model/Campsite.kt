@@ -24,4 +24,7 @@ data class Campsite(
     val rules: String = "",
     val cancellationPolicy: String = "Flexible",
     val requireRulesAcceptance: Boolean = true
-)
+) {
+    // Checks whether this user owns the campsite and can use its owner-only options.
+    fun isOwnedBy(userId: String?): Boolean = !userId.isNullOrBlank() && ownerId == userId
+}
