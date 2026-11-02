@@ -17,16 +17,20 @@ import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
 import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.formatReservationDate
+import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 
 // Loads and displays the signed-in entrant's active reservations.
 @Composable
-fun MyReservationsScreen(onReservationClick: (String) -> Unit) {
+fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (String) -> Unit) {
     val service = remember { ReservationService() }
+    val campsiteService = remember { CampsiteService() }
     val entrantId = rememberCampsiteOwnerId()
+    var wins by remember(entrantId) { mutableStateOf<List<Pair<String, String>>>(emptyList()) } // Lottery ID and campsite name
     var reservations by remember(entrantId) { mutableStateOf<List<Reservation>>(emptyList()) }
     var loading by remember(entrantId) { mutableStateOf(true) }
     var error by remember(entrantId) { mutableStateOf("") }
@@ -40,6 +44,18 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit) {
             val result = withTimeoutOrNull(20000) { service.getMyActiveReservations() }
             if (result == null) error = "Could not load your reservations. Please try again."
             else reservations = result
+            // Reservations can still be shown if won lotteries cannot be loaded.
+            wins = try {
+                withTimeoutOrNull(20000) {
+                    service.getMyPendingLotteries().map { lottery ->
+                        lottery.id to campsiteService.getCampsite(lottery.campsiteId)?.name.orEmpty()
+                    }
+                }.orEmpty()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptyList()
+            }
         } catch (_: Exception) {
             coroutineContext.ensureActive() // Stop normally when leaving the screen.
             error = if (entrantId == null) "Sign in to view your reservations." else "Could not load your reservations. Please try again."
@@ -58,6 +74,26 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit) {
         Spacer(Modifier.height(8.dp))
         Text("Your upcoming campsite stays.", color = PinedrawColors.TextSecondary)
         Spacer(Modifier.height(16.dp))
+        // Only appears when the entrant has won a spot they have not used yet.
+        wins.forEach { (lotteryId, campsiteName) ->
+            Card(
+                onClick = { onReserveClick(lotteryId) },
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
+            ) {
+                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("You won a spot", color = PinedrawColors.Lime, fontWeight = FontWeight.Bold)
+                        Text(campsiteName.ifBlank { "Unnamed campsite" }, fontWeight = FontWeight.Bold)
+                        Text("Choose your dates to reserve.", color = PinedrawColors.TextSecondary)
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+                        modifier = Modifier.size(20.dp), tint = PinedrawColors.TextMuted
+                    )
+                }
+            }
+        }
 
         when {
             loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {

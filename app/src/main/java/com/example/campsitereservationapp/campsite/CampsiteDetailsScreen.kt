@@ -41,10 +41,10 @@ import java.net.URL
 import java.util.Locale
 
 /**
- * Loads a campsite owned by the signed-in user and displays its details.
+ * Loads a campsite and displays its details, with extra options for its owner.
  *
- * Rejects campsites belonging to another user. Create Lottery opens
- * [LotteryCreation] for the loaded campsite; closing that form returns here.
+ * Hides other users' unpublished campsites. Create Lottery is shown to the owner and
+ * opens [LotteryCreation] for the loaded campsite; closing that form returns here.
  * Loading failures display an error with a retry action.
  *
  * @param campsiteId Firestore document ID of the campsite to load.
@@ -109,7 +109,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                     CampsitePhoto(site.imageUrls.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         Text(site.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
-                        Button(
+                        if (site.isOwnedBy(ownerId)) Button(
                             onClick = { creatingLottery = true },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                             shape = CircleShape,
