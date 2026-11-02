@@ -106,6 +106,21 @@ class ReservationBookingTest {
     }
 
     @Test
+    fun declineError_allowsEntrantWithSpot() {
+        assertNull(declineError(lottery, "winner"))
+    }
+
+    @Test
+    fun declineError_rejectsEntrantWithoutSpot() {
+        assertNotNull(declineError(lottery, "someone else"))
+    }
+
+    @Test
+    fun reservationError_rejectsEntrantAfterDeclining() {
+        assertNotNull(error(lottery.copy(pending = lottery.pending - "winner")))
+    }
+
+    @Test
     fun reservationError_requiresRulesOnlyWhenCampsiteDoes() {
         assertNotNull(error(accepted = false))
         assertNull(error(campsite = campsite.copy(requireRulesAcceptance = false), accepted = false))

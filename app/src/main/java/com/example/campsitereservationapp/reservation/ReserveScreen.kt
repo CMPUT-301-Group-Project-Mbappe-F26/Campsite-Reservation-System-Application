@@ -110,6 +110,7 @@ private fun ColumnScope.ReserveFlow(
     val scope = rememberCoroutineScope()
     var confirming by rememberSaveable { mutableStateOf(false) }
     var rulesAccepted by rememberSaveable { mutableStateOf(false) }
+    var decliningSpot by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val selectableDates = remember(lottery, campsite) {
@@ -145,9 +146,47 @@ private fun ColumnScope.ReserveFlow(
                     error = ""
                     confirming = true
                 },
-                enabled = datesOpen, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
+                enabled = datesOpen && !saving, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
             ) { Text("Continue", fontWeight = FontWeight.Bold) }
+            if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Text("None of these work?", color = PinedrawColors.TextSecondary)
+                TextButton(onClick = { decliningSpot = true }, enabled = !saving) {
+                    Text(if (saving) "Declining..." else "Decline spot", color = PinedrawColors.Coral)
+                }
+            }
         }
+        if (decliningSpot) AlertDialog(
+            onDismissRequest = { decliningSpot = false },
+            title = { Text("Decline this spot?") },
+            text = { Text("Your spot goes to the next entrant in the draw. This can't be undone.") },
+            dismissButton = { TextButton(onClick = { decliningSpot = false }) { Text("Keep my spot") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    decliningSpot = false
+                    saving = true
+                    error = ""
+                    scope.launch {
+                        try {
+                            val result = withTimeoutOrNull(20000) { service.decline(lottery.id) ?: "" }
+                            when {
+                                result == null -> error = "Could not decline your spot. Please try again."
+                                result.isNotEmpty() -> error = result
+                                else -> {
+                                    Toast.makeText(context, "Spot declined", Toast.LENGTH_LONG).show()
+                                    onBack()
+                                }
+                            }
+                        } catch (_: Exception) {
+                            coroutineContext.ensureActive() // Stop normally when leaving the screen.
+                            error = "Could not decline your spot. Please try again."
+                        } finally {
+                            saving = false
+                        }
+                    }
+                }) { Text("Decline", color = PinedrawColors.Coral) }
+            }
+        )
         return
     }
 

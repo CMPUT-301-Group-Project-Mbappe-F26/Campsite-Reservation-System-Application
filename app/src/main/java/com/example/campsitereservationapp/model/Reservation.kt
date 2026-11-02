@@ -115,3 +115,7 @@ fun reservationError(
         else -> null
     }
 }
+
+// Checks whether an entrant has a spot to decline, returning a message for display or null if they do.
+fun declineError(lottery: Lottery, entrantId: String): String? =
+    if (entrantId in lottery.pending) null else "You do not have a spot to decline in this lottery."
