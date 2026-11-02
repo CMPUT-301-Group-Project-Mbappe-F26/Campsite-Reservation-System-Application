@@ -28,7 +28,8 @@ package com.example.campsitereservationapp.model
  * @property stayEndDate End of the offered stay period, strictly after stay start.
  * @property registered Firebase user IDs registered for the lottery waiting list.
  * @property pending Firebase user IDs selected and awaiting a reservation decision.
- * @property booked Firebase user IDs that have confirmed a reservation through this lottery.
+ * @property booked Reservations made through this lottery. Confirmed ones count toward
+ * [numberOfWinners], and their nights cannot be booked again.
  * @property useMaxCapacity Whether the owner selected Max. When true, [numberOfWinners]
  * must equal the campsite's current maximum occupancy.
  * @property drawCompleted Whether the service has already saved the initial draw, including an empty draw.
@@ -47,7 +48,7 @@ data class Lottery(
     val stayEndDate: String = "",
     val registered: List<String> = emptyList(),
     val pending: List<String> = emptyList(),
-    val booked: List<String> = emptyList(),
+    val booked: List<Reservation> = emptyList(),
     val useMaxCapacity: Boolean = false,
     val drawCompleted: Boolean = false
 ) {

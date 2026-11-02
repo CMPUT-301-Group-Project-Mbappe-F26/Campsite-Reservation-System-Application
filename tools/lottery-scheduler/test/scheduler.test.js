@@ -80,6 +80,19 @@ test("repeat calls cannot overwrite a saved initial draw", async () => {
   assert.equal(db.writes, 1);
 });
 
+test("completed lottery preserves full reservation objects when the scheduler runs again", async () => {
+  const reservation = {
+    id: "booking", entrantId: "alice", campsiteId: "camp", lotteryId: "draw",
+    checkInDate: "2027-05-01", checkOutDate: "2027-05-03", status: "Confirmed",
+  };
+  const saved = { ...lottery, drawCompleted: true, booked: [reservation] };
+  const db = store({ "lotteries/draw": saved, "campsites/camp": { ownerId: "owner" } });
+  const result = await drawLotteryDocument(db, { path: "lotteries/draw" }, { now, dryRun: false });
+  assert.equal(result.status, "completed");
+  assert.deepEqual(db.records.get("lotteries/draw"), saved);
+  assert.equal(db.writes, 0);
+});
+
 test("dry run validates and previews without writing", async () => {
   const db = store();
   assert.equal((await drawLotteryDocument(db, { path: "lotteries/draw" }, { now })).status, "previewed");

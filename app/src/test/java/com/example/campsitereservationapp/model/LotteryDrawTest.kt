@@ -60,7 +60,8 @@ class LotteryDrawTest {
 
     @Test
     fun drawingLeavesRegistrationAndParticipantStatesUnchanged() {
-        val original = lottery.copy(pending = listOf("pending-user"), booked = listOf("booked-user"))
+        val reservation = Reservation(id = "booking", entrantId = "booked-user", checkInDate = "2027-05-01", checkOutDate = "2027-05-03")
+        val original = lottery.copy(pending = listOf("pending-user"), booked = listOf(reservation))
         val snapshot = original.copy()
         original.draw(2)
         assertEquals(snapshot, original)

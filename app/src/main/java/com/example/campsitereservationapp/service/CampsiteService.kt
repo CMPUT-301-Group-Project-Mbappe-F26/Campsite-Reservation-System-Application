@@ -59,4 +59,10 @@ class CampsiteService {
             .get().await()
         return doc.toObject(Campsite::class.java)?.copy(id = doc.id)
     }
+
+    // Saves the rules and policy entrants see for a campsite. Firestore rules limit this to its owner.
+    suspend fun updateCampsitePolicy(id: String, rules: String) {
+        if (auth.currentUser == null) throw Exception("Not signed in")
+        db.collection("campsites").document(id).update("rules", rules.trim()).await()
+    }
 }

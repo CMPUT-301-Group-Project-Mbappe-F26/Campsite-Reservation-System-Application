@@ -7,6 +7,10 @@ const lottery = {
   numberOfWinners: 2, registrationEndDate: "2027-04-07", drawCompleted: false,
 };
 const midnight = new Date("2027-04-08T06:00:00Z");
+const reservation = {
+  id: "booking", entrantId: "alice", campsiteId: "camp", lotteryId: "draw",
+  campsiteName: "Camp", checkInDate: "2027-05-01", checkOutDate: "2027-05-03", status: "Confirmed",
+};
 
 test("draw returns everyone when the count covers all entrants", () => {
   assert.deepEqual(drawRegistered(lottery.registered, 3), lottery.registered);
@@ -59,7 +63,9 @@ test("future registration periods are not drawn", () => {
 });
 
 test("completed draws stay completed after winners book", () => {
-  assert.equal(prepareDraw({ ...lottery, drawCompleted: true, pending: [], booked: ["alice"] }, midnight), null);
+  const booked = { ...lottery, drawCompleted: true, pending: [], booked: [reservation] };
+  assert.equal(prepareDraw(booked, midnight), null);
+  assert.deepEqual(booked.booked, [reservation]);
 });
 
 test("empty lottery completes once and cannot draw late registrations", () => {
@@ -73,7 +79,7 @@ test("legacy missing marker is supported but existing results are not overwritte
   const { drawCompleted, ...legacy } = lottery;
   assert.equal(prepareDraw(legacy, midnight).drawCompleted, true);
   assert.throws(() => prepareDraw({ ...legacy, pending: ["alice"] }, midnight), DrawDataError);
-  assert.throws(() => prepareDraw({ ...legacy, booked: ["alice"] }, midnight), DrawDataError);
+  assert.throws(() => prepareDraw({ ...legacy, booked: [reservation] }, midnight), /already has pending users or reservations/);
 });
 
 test("invalid dates, participant lists, and marker values are rejected", () => {
@@ -83,6 +89,7 @@ test("invalid dates, participant lists, and marker values are rejected", () => {
   assert.throws(() => prepareDraw({ ...lottery, numberOfWinners: 0 }, midnight), DrawDataError);
   assert.throws(() => prepareDraw({ ...lottery, drawCompleted: "false" }, midnight), DrawDataError);
   assert.throws(() => prepareDraw({ ...lottery, pending: null }, midnight), DrawDataError);
+  assert.throws(() => prepareDraw({ ...lottery, booked: ["alice"] }, midnight), /booked must contain reservation objects/);
 });
 
 test("spring daylight saving deadline follows Alberta local midnight", () => {

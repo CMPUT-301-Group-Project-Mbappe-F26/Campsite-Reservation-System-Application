@@ -1,6 +1,7 @@
 package com.example.campsitereservationapp.service
 
 import com.example.campsitereservationapp.model.Lottery
+import com.example.campsitereservationapp.model.Reservation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -41,7 +42,11 @@ class LotteryDrawPreparationTest {
 
     @Test
     fun completedDrawIsPreservedAfterWinnersBook() {
-        val booked = lottery.copy(drawCompleted = true, pending = emptyList(), booked = listOf("alice", "bob"))
+        val bookings = listOf(
+            Reservation(id = "alice-booking", entrantId = "alice", checkInDate = "2027-05-01", checkOutDate = "2027-05-03"),
+            Reservation(id = "bob-booking", entrantId = "bob", checkInDate = "2027-05-03", checkOutDate = "2027-05-05")
+        )
+        val booked = lottery.copy(drawCompleted = true, pending = emptyList(), booked = bookings)
         assertEquals(booked, prepareLotteryDraw(booked, deadline))
     }
 
@@ -66,7 +71,7 @@ class LotteryDrawPreparationTest {
             prepareLotteryDraw(lottery.copy(pending = listOf("alice")), deadline)
         }
         assertThrows(IllegalStateException::class.java) {
-            prepareLotteryDraw(lottery.copy(booked = listOf("alice")), deadline)
+            prepareLotteryDraw(lottery.copy(booked = listOf(Reservation(entrantId = "alice"))), deadline)
         }
     }
 

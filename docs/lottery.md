@@ -47,7 +47,7 @@ User and campsite IDs reference separate documents; their full objects are not e
 | `stayEndDate` | `String` | End of the offered stay period. |
 | `registered` | `List<String>` | User IDs registered for the waiting list. |
 | `pending` | `List<String>` | Selected user IDs awaiting a reservation decision. |
-| `booked` | `List<String>` | User IDs with a confirmed reservation through this lottery. |
+| `booked` | `List<Reservation>` | Reservations made through this lottery. |
 | `useMaxCapacity` | `Boolean` | Whether the owner selected the Max checkbox. |
 | `drawCompleted` | `Boolean` | Whether the initial draw has been saved, including a draw with no entrants. |
 
@@ -78,10 +78,10 @@ date, interpreted in Alberta's `America/Edmonton` time zone, including daylight 
 The model stores only dates, without a time or time zone. It does not itself schedule
 registration opening/closing or winner draws.
 
-`registered`, `pending`, and `booked` are stored as arrays of Firebase user IDs.
-New lotteries start with all three arrays empty. Their names describe the intended
-participant states; joining, drawing winners, booking, and moving users between
-these lists are not implemented by the creation flow.
+`registered` and `pending` are stored as arrays of Firebase user IDs, and `booked`
+as an array of reservations. New lotteries start with all three arrays empty. Their
+names describe the intended participant states; joining, drawing winners, booking,
+and moving users between these lists are not implemented by the creation flow.
 
 ## Drawing winners
 
@@ -137,7 +137,14 @@ to an instant or compare Alberta calendar dates since the current model stores d
 strings only. The GitHub runner uses Alberta calendar dates. It does not directly
 call the Android Kotlin method and has no notification implementation.
 
-Existing-reservation conflict checks, enforcement of campsite season/available
-weekdays, and deployed Firestore security rules are outside the current creation
-implementation. The data class constructor performs no creation validation or
-state transitions; `draw` validates only its requested winner count.
+## Confirming reservations
+
+`ReservationService.reserve` moves a winner from `pending` to `booked` in a Firestore
+transaction. Confirmed reservations cannot exceed `numberOfWinners`, and each night
+can only be booked once. A stay can check out on the day another stay checks in.
+
+Enforcement of campsite season/available weekdays at reservation time is in
+`reservationError`. Lottery creation does not yet constrain its periods to campsite
+availability. Deployed Firestore security rules are outside the current implementation.
+The data class constructor performs no creation validation or state transitions;
+`draw` validates only its requested winner count.

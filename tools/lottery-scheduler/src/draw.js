@@ -29,6 +29,16 @@ function userIds(value, field) {
   return value;
 }
 
+/** Reads the booked array as reservation objects; reservation rules remain in the app. */
+function bookedReservations(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((reservation) =>
+    reservation === null || typeof reservation !== "object" || Array.isArray(reservation))) {
+    throw new DrawDataError("booked must contain reservation objects.");
+  }
+  return value;
+}
+
 /**
  * Selects up to count distinct registered IDs without modifying the input.
  * Matches Lottery.draw: return everyone when count covers all distinct entrants.
@@ -64,8 +74,8 @@ export function prepareDraw(lottery, now = new Date()) {
   if (!Number.isSafeInteger(lottery.numberOfWinners) || lottery.numberOfWinners <= 0) {
     throw new DrawDataError("The lottery must have a positive integer winner count.");
   }
-  if (userIds(lottery.pending, "pending").length || userIds(lottery.booked, "booked").length) {
-    throw new DrawDataError("Unmarked lottery already has pending/booked users; review its draw status.");
+  if (userIds(lottery.pending, "pending").length || bookedReservations(lottery.booked).length) {
+    throw new DrawDataError("Unmarked lottery already has pending users or reservations; review its draw status.");
   }
   return {
     pending: drawRegistered(lottery.registered, lottery.numberOfWinners),

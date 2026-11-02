@@ -91,7 +91,7 @@ class LotteryService {
      * @return The lottery with committed pending winners, or its existing completed state.
      * @throws IllegalArgumentException If the ID is invalid or stored draw data is invalid.
      * @throws IllegalStateException If signed out, ownership fails, registration is open,
-     * or an unmarked lottery already contains pending or booked users.
+     * or an unmarked lottery already contains pending users or reservations.
      * Firebase failures and cancellation propagate to the caller. This function needs
      * network access and does not install a timer or trigger itself automatically.
      */
@@ -127,7 +127,7 @@ class LotteryService {
  * Prepares the initial draw from a stored lottery without performing database operations.
  *
  * Already completed draws are returned unchanged. Unmarked lotteries with pending
- * or booked users are rejected to avoid overwriting older results. An empty entrant
+ * users or booked reservations are rejected to avoid overwriting older results. An empty entrant
  * list still produces a completed draw, so retries cannot draw a later registration.
  *
  * @param lottery Latest lottery snapshot read by the service transaction.
@@ -140,7 +140,7 @@ internal fun prepareLotteryDraw(lottery: Lottery, nowMillis: Long): Lottery {
     if (lottery.drawCompleted) return lottery
     require(lottery.numberOfWinners > 0) { "The lottery must have a positive winner count." }
     check(lottery.pending.isEmpty() && lottery.booked.isEmpty()) {
-        "This lottery already has pending or booked users. Its draw status must be reviewed before drawing."
+        "This lottery already has pending users or reservations. Its draw status must be reviewed before drawing."
     }
     check(nowMillis >= lotteryDrawOpensAt(lottery.registrationEndDate)) {
         "Registration must close before drawing. Try after 23:59 Alberta time on the registration end date."

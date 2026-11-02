@@ -21,7 +21,9 @@ For each eligible lottery, the script:
 
 Completed draws are preserved, even if `pending` is empty. Documents created before
 the completion marker was introduced are supported. Unmarked documents with existing
-pending/booked users are rejected for review. Invalid records do not prevent other
+pending users or booked reservations are rejected for review. `registered` and
+`pending` contain user IDs; `booked` contains reservation objects and is never
+rewritten by the scheduler. Invalid records do not prevent other
 valid draws, but the run is marked unsuccessful so they can be investigated.
 
 The script pages through expired lotteries using the existing single-field index on
