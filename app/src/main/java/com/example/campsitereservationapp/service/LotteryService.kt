@@ -34,7 +34,7 @@ class LotteryService {
      *
      * Checks required fields and period ordering with [validateLottery], then reads
      * the campsite and lottery documents in a transaction. The stored campsite
-     * determines ownership and the maximum used by [lotteryCapacityError]. An existing,
+     * determines ownership, capacity, and the availability used by [lotteryStayAvailabilityError]. An existing,
      * identical lottery is accepted as a successful retry; different data at the
      * same document ID is rejected. Firebase failures and cancellation propagate to the caller.
      *
@@ -57,10 +57,16 @@ class LotteryService {
             check(site.getString("ownerId") == uid && auth.currentUser?.uid == uid) {
                 "This campsite does not belong to your account."
             }
+            val currentCampsite = site.toObject(Campsite::class.java)
+                ?: error("This campsite is no longer available.")
             val capacityError = lotteryCapacityError(
-                lottery.numberOfWinners, site.toObject(Campsite::class.java)?.maxOccupancy, lottery.useMaxCapacity
+                lottery.numberOfWinners, currentCampsite.maxOccupancy, lottery.useMaxCapacity
             )
             require(capacityError == null) { capacityError.orEmpty() }
+            val availabilityError = lotteryStayAvailabilityError(
+                lottery.stayStartDate, lottery.stayEndDate, currentCampsite
+            )
+            require(availabilityError == null) { availabilityError.orEmpty() }
             if (existing.exists()) {
                 // A retry after a delayed response must not create a second lottery.
                 check(existing.toObject(Lottery::class.java) == lottery) {

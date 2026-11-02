@@ -5,8 +5,9 @@ package com.example.campsitereservationapp.model
  * `lotteries/{id}` in Firestore. Linked users and campsites are referenced by ID.
  *
  * Dates are date-only `yyyy-MM-dd` strings, matching [Campsite] and [Reservation].
- * The form describes start dates as 00:00 and end dates as 23:59 (11:59 PM),
- * interpreted in Alberta's `America/Edmonton` time zone. This model stores neither
+ * Registration and booking start dates mean 00:00 and end dates mean 23:59 (11:59 PM),
+ * interpreted in Alberta's `America/Edmonton` time zone. Stay end is an exclusive
+ * checkout date, matching [Reservation]. This model stores neither
  * times nor a time zone. Registration must end before the booking start date,
  * and booking must end before the stay start date. Period endpoints cannot be shared.
  *
@@ -25,7 +26,8 @@ package com.example.campsitereservationapp.model
  * @property bookingStartDate First date selected entrants may reserve, after registration ends.
  * @property bookingEndDate Last date selected entrants may reserve, on or after booking start.
  * @property stayStartDate First campsite stay date offered, after booking ends.
- * @property stayEndDate End of the offered stay period, strictly after stay start.
+ * @property stayEndDate Exclusive checkout end of the offered stay period, strictly after stay start.
+ * Its preceding night must be within the campsite's current availability.
  * @property registered Firebase user IDs registered for the lottery waiting list.
  * @property pending Firebase user IDs selected and awaiting a reservation decision.
  * @property booked Reservations made through this lottery. Confirmed ones count toward

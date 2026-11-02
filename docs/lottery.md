@@ -44,7 +44,7 @@ User and campsite IDs reference separate documents; their full objects are not e
 | `bookingStartDate` | `String` | First date selected entrants can make a reservation. |
 | `bookingEndDate` | `String` | Last booking date. |
 | `stayStartDate` | `String` | First campsite stay date offered. |
-| `stayEndDate` | `String` | End of the offered stay period. |
+| `stayEndDate` | `String` | Exclusive checkout end of the offered stay period. |
 | `registered` | `List<String>` | User IDs registered for the waiting list. |
 | `pending` | `List<String>` | Selected user IDs awaiting a reservation decision. |
 | `booked` | `List<Reservation>` | Reservations made through this lottery. |
@@ -63,18 +63,23 @@ incomplete drafts. A default object cannot be submitted as a valid lottery.
 - Registration must end on an earlier calendar date than booking starts.
 - Booking must end on an earlier calendar date than the stay starts.
 - The stay end must be strictly after the stay start.
+- Offered stay nights must fit within the campsite's current availability dates.
+  Checkout can be the day after the last available night. The first and last offered
+  nights must be available weekdays; the reservation flow filters closed nights
+  between them, so a lottery can span multiple weekends.
 - Capacity must be a positive integer. With Max unchecked, it must be strictly less
   than the campsite's current `maxOccupancy`. With Max checked, it must equal that maximum.
 - A campsite without a positive maximum occupancy cannot be used to create a lottery.
 
 The form checks dates and capacity before enabling Start Lottery. The service
-validates dates again and checks ownership and the latest campsite maximum inside
+validates dates again and checks ownership, the latest campsite maximum, and current availability inside
 the Firestore transaction. Cancelling the form does not save a lottery.
 
 ## Date and participant semantics
 
-The UI displays start dates as 00:00 and end dates as 23:59 (11:59 PM) on the selected
-date, interpreted in Alberta's `America/Edmonton` time zone, including daylight saving time.
+Registration and booking windows start at 00:00 and end at 23:59 (11:59 PM) on the
+selected date in Alberta's `America/Edmonton` time zone, including daylight saving time.
+Stay end is an exclusive checkout date, matching the reservation implementation.
 The model stores only dates, without a time or time zone. It does not itself schedule
 registration opening/closing or winner draws.
 
@@ -144,7 +149,11 @@ transaction. Confirmed reservations cannot exceed `numberOfWinners`, and each ni
 can only be booked once. A stay can check out on the day another stay checks in.
 
 Enforcement of campsite season/available weekdays at reservation time is in
-`reservationError`. Lottery creation does not yet constrain its periods to campsite
-availability. Deployed Firestore security rules are outside the current implementation.
+`reservationError`. Lottery creation constrains offered stay dates in the form and
+rechecks current campsite availability in the save transaction using
+`lotteryStayAvailabilityError`. Registration and booking windows can precede the
+campsite's season. A campsite availability edit also affects subsequent reservation
+checks for existing lotteries; saved lotteries are not automatically rewritten.
+Deployed Firestore security rules are outside the current implementation.
 The data class constructor performs no creation validation or state transitions;
 `draw` validates only its requested winner count.
