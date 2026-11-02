@@ -1,6 +1,9 @@
+import org.jetbrains.dokka.gradle.engine.parameters.VisibilityModifier
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.dokka)
     id("com.google.gms.google-services")
 }
 
@@ -34,6 +37,25 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+}
+
+dokka {
+    moduleName.set("Campsite Reservation App")
+    dokkaPublications.html {
+        outputDirectory.set(layout.buildDirectory.dir("dokka/html"))
+    }
+    dokkaSourceSets.configureEach {
+        // Include internal validators and private UI helpers in the developer reference.
+        perPackageOption {
+            matchingRegex.set("com\\.example\\.campsitereservationapp\\.(campsite|service)")
+            documentedVisibilities.set(setOf(
+                VisibilityModifier.Public,
+                VisibilityModifier.Protected,
+                VisibilityModifier.Internal,
+                VisibilityModifier.Private
+            ))
+        }
     }
 }
 

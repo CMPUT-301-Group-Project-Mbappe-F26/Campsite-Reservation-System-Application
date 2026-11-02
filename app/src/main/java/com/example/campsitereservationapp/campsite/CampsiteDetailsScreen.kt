@@ -38,7 +38,16 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 
-// Loads and shows a campsite belonging to the current owner.
+/**
+ * Loads a campsite owned by the signed-in user and displays its details.
+ *
+ * Rejects campsites belonging to another user. Create Lottery opens
+ * [LotteryCreation] for the loaded campsite; closing that form returns here.
+ * Loading failures display an error with a retry action.
+ *
+ * @param campsiteId Firestore document ID of the campsite to load.
+ * @param onBack Returns to the owner's campsite list.
+ */
 @Composable
 fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
     val service = remember { CampsiteService() }
@@ -99,7 +108,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                         Text(site.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
                         Button(
                             onClick = { creatingLottery = true },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                             shape = CircleShape,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = PinedrawColors.Lime,
