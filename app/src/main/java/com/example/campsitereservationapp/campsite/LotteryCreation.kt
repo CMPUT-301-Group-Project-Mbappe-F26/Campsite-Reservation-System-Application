@@ -32,6 +32,8 @@ import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.service.lotteryCapacityError
 import com.example.campsitereservationapp.service.validateLottery
+import com.example.campsitereservationapp.service.lotteryStayAvailabilityError
+import com.example.campsitereservationapp.service.isLotteryStayDateSelectable
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -51,7 +53,7 @@ import kotlinx.coroutines.launch
  *
  * Back and Cancel discard the local draft without saving. Editing and closing are
  * blocked while a submission is in progress. The caller must supply an owned campsite;
- * the service independently verifies ownership and capacity when saving.
+ * the service independently verifies ownership, capacity, and current campsite availability when saving.
  *
  * @param campsite Loaded campsite whose ID, owner, and maximum occupancy define the draft.
  * @param onCancel Closes the form on cancellation or successful creation.
@@ -78,6 +80,8 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
         stayStartDate = stayStart, stayEndDate = stayEnd
     )
     val validationError = runCatching { validateLottery(draft) }.exceptionOrNull()?.message
+    val availabilityError = if (stayStart.isNotBlank() && stayEnd.isNotBlank())
+        lotteryStayAvailabilityError(stayStart, stayEnd, campsite) else null
     val allDatesSelected = listOf(registrationStart, registrationEnd, bookingStart, bookingEnd, stayStart, stayEnd)
         .all { it.isNotBlank() }
     val submission: LotteryCreationViewModel = viewModel(key = "lottery-${campsite.ownerId}-${campsite.id}")
@@ -172,7 +176,7 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
                 )
             }
             Text(
-                "Start dates begin at 00:00. End dates end at 11:59 on the selected date.",
+                "Registration and booking start at 00:00 and end at 23:59 (11:59 PM), Alberta time. Stay end is the checkout date.",
                 style = MaterialTheme.typography.bodySmall,
                 color = PinedrawColors.TextSecondary
             )
@@ -187,9 +191,21 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
                 LotteryDateField("Booking end", bookingEnd, !submission.saving) { bookingEnd = it }
             }
             LotterySection("Stay period") {
-                Text("Campsite dates available through this lottery.", color = PinedrawColors.TextSecondary)
-                LotteryDateField("Stay start", stayStart, !submission.saving) { stayStart = it }
-                LotteryDateField("Stay end", stayEnd, !submission.saving) { stayEnd = it }
+                Text("Offer stay dates within this campsite's availability. The checkout date is not a booked night.",
+                    color = PinedrawColors.TextSecondary)
+                Text("Available nights: ${campsite.availableFrom.ifBlank { "Any start date" }} to ${campsite.availableUntil.ifBlank { "No end date" }}",
+                    style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+                if (campsite.availableDays.isNotEmpty()) {
+                    val weekdays = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                    Text(campsite.availableDays.distinct().sorted().mapNotNull { weekdays.getOrNull(it - 1) }.joinToString(", "),
+                        style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+                }
+                LotteryDateField("First offered night", stayStart, !submission.saving, campsite) { stayStart = it }
+                LotteryDateField("Stay end (checkout)", stayEnd, !submission.saving, campsite, checkout = true) { stayEnd = it }
+                if (availabilityError != null) {
+                    Text(availabilityError, color = PinedrawColors.Coral, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                }
             }
             if (submission.error.isNotEmpty()) {
                 Text(submission.error, color = PinedrawColors.Coral,
@@ -203,7 +219,7 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
             }
             Button(
                 onClick = { submission.submit(draft) },
-                enabled = !submission.saving && capacityError == null && validationError == null,
+                enabled = !submission.saving && capacityError == null && validationError == null && availabilityError == null,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 shape = CircleShape,
                 colors = ButtonDefaults.buttonColors(
@@ -279,11 +295,18 @@ private fun LotterySection(title: String, content: @Composable ColumnScope.() ->
  * @param label Accessible field description and dialog title.
  * @param value Selected `yyyy-MM-dd` date, or an empty string before selection.
  * @param enabled Whether the user may open the date picker.
+ * @param campsite Optional campsite whose season and weekdays constrain stay endpoints.
+ * Registration and booking window pickers leave this null so advance booking remains possible.
+ * @param checkout Whether this is a checkout endpoint rather than the first offered night.
  * @param onChange Receives the confirmed date as a `yyyy-MM-dd` string.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LotteryDateField(label: String, value: String, enabled: Boolean, onChange: (String) -> Unit) {
+private fun LotteryDateField(
+    label: String, value: String, enabled: Boolean,
+    campsite: Campsite? = null, checkout: Boolean = false,
+    onChange: (String) -> Unit
+) {
     var picking by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = PinedrawColors.TextSecondary)
@@ -301,14 +324,21 @@ private fun LotteryDateField(label: String, value: String, enabled: Boolean, onC
         val formatter = remember {
             SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { timeZone = TimeZone.getTimeZone("UTC") }
         }
+        val selectable = remember(campsite, checkout) {
+            object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = campsite == null ||
+                    isLotteryStayDateSelectable(utcTimeMillis, campsite, checkout)
+            }
+        }
         val state = rememberDatePickerState(
-            initialSelectedDateMillis = value.takeIf { it.isNotBlank() }?.let { formatter.parse(it)?.time }
+            initialSelectedDateMillis = value.takeIf { it.isNotBlank() }?.let { formatter.parse(it)?.time },
+            selectableDates = selectable
         )
         DatePickerDialog(
             onDismissRequest = { picking = false },
             colors = DatePickerDefaults.colors(containerColor = PinedrawColors.Surface),
             confirmButton = {
-                TextButton(enabled = state.selectedDateMillis != null, onClick = {
+                TextButton(enabled = state.selectedDateMillis?.let { selectable.isSelectableDate(it) } == true, onClick = {
                     state.selectedDateMillis?.let { onChange(formatter.format(Date(it))) }
                     picking = false
                 }) { Text("Select") }

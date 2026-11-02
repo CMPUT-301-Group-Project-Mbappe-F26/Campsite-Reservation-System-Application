@@ -44,14 +44,15 @@ User and campsite IDs reference separate documents; their full objects are not e
 | `bookingStartDate` | `String` | First date selected entrants can make a reservation. |
 | `bookingEndDate` | `String` | Last booking date. |
 | `stayStartDate` | `String` | First campsite stay date offered. |
-| `stayEndDate` | `String` | End of the offered stay period. |
+| `stayEndDate` | `String` | Exclusive checkout end of the offered stay period. |
 | `registered` | `List<String>` | User IDs registered for the waiting list. |
 | `pending` | `List<String>` | Selected user IDs awaiting a reservation decision. |
 | `booked` | `List<Reservation>` | Reservations made through this lottery. |
 | `useMaxCapacity` | `Boolean` | Whether the owner selected the Max checkbox. |
+| `drawCompleted` | `Boolean` | Whether the initial draw has been saved, including a draw with no entrants. |
 
 String fields default to empty strings, winner count to zero, lists to empty lists,
-and `useMaxCapacity` to false. These defaults allow Firestore deserialization and
+and both `useMaxCapacity` and `drawCompleted` to false. These defaults allow Firestore deserialization and
 incomplete drafts. A default object cannot be submitted as a valid lottery.
 
 ## Creation rules
@@ -62,29 +63,97 @@ incomplete drafts. A default object cannot be submitted as a valid lottery.
 - Registration must end on an earlier calendar date than booking starts.
 - Booking must end on an earlier calendar date than the stay starts.
 - The stay end must be strictly after the stay start.
+- Offered stay nights must fit within the campsite's current availability dates.
+  Checkout can be the day after the last available night. The first and last offered
+  nights must be available weekdays; the reservation flow filters closed nights
+  between them, so a lottery can span multiple weekends.
 - Capacity must be a positive integer. With Max unchecked, it must be strictly less
   than the campsite's current `maxOccupancy`. With Max checked, it must equal that maximum.
 - A campsite without a positive maximum occupancy cannot be used to create a lottery.
 
 The form checks dates and capacity before enabling Start Lottery. The service
-validates dates again and checks ownership and the latest campsite maximum inside
+validates dates again and checks ownership, the latest campsite maximum, and current availability inside
 the Firestore transaction. Cancelling the form does not save a lottery.
 
 ## Date and participant semantics
 
-The UI displays start dates as 00:00 and end dates as 11:59 on the selected date.
-The model stores only dates, without a time or time zone; there is no automatic
-opening, closing, or winner draw implemented yet.
+Registration and booking windows start at 00:00 and end at 23:59 (11:59 PM) on the
+selected date in Alberta's `America/Edmonton` time zone, including daylight saving time.
+Stay end is an exclusive checkout date, matching the reservation implementation.
+The model stores only dates, without a time or time zone. It does not itself schedule
+registration opening/closing or winner draws.
 
 `registered` and `pending` are stored as arrays of Firebase user IDs, and `booked`
 as an array of reservations. New lotteries start with all three arrays empty. Their
 names describe the intended participant states; joining, drawing winners, booking,
 and moving users between these lists are not implemented by the creation flow.
 
+## Drawing winners
+
+`Lottery.draw(amountOfWinners)` returns randomly selected, distinct IDs from
+`registered`. When the requested count is at least the number of distinct entrants,
+it returns everyone in their existing order. Zero returns an empty list; negative
+counts are rejected. Duplicate IDs cannot win multiple times.
+
+```kotlin
+val winners = lottery.draw(lottery.numberOfWinners)
+```
+
+The function only returns IDs. It does not modify `registered`, `pending`, or
+`booked`, persist anything, or check the registration deadline. Calling it again
+performs a new draw. Use the service method below to persist an initial draw safely.
+
+## Loading, drawing, and saving
+
+From a coroutine belonging to the signed-in campsite owner:
+
+```kotlin
+val drawnLottery = LotteryService().drawLottery(lotteryId)
+val pendingWinners = drawnLottery.pending
+```
+
+`drawLottery` reads the lottery and its campsite in a Firestore transaction. It
+checks ownership against both documents, checks the Alberta registration deadline,
+draws the stored `numberOfWinners`, and updates only `pending` and `drawCompleted`.
+The registered list and unrelated document fields remain intact. Concurrent edits
+cause Firestore to retry using the latest snapshot; a committed draw cannot be
+overwritten by another call through this service.
+
+Repeated calls return the current stored state if `drawCompleted` is true. This
+also covers empty lotteries and winners who later leave pending to book. Older
+documents missing the marker deserialize as false; if they already contain pending
+or booked users, the service refuses to overwrite them and asks for review.
+
+The Android method is callable but has no UI button or timer. It uses the
+Android device clock to check the deadline; authoritative automatic timing belongs
+in the future backend. Firestore rules must allow the owner's transaction reads
+and the update to `pending`/`drawCompleted`. No live Firebase rules are deployed by
+this implementation.
+
+Automatic drawing is prepared as an opt-in GitHub Actions workflow, avoiding the
+Blaze requirement for scheduled Firebase functions. It uses equivalent Node.js logic
+to find expired lotteries and atomically save `pending` and `drawCompleted`.
+The workflow is disabled until Google authentication and no-cost Actions settings
+are configured; see [automatic draw setup](lottery-scheduler.md).
+The agreed registration cutoff is 23:59 (11:59 PM) on `registrationEndDate` in
+`America/Edmonton`. The scheduler should draw after that closing minute has elapsed,
+beginning at 00:00 the following day. It must convert the agreed local deadline
+to an instant or compare Alberta calendar dates since the current model stores date
+strings only. The GitHub runner uses Alberta calendar dates. It does not directly
+call the Android Kotlin method and has no notification implementation.
+
+## Confirming reservations
+
 `ReservationService.reserve` moves a winner from `pending` to `booked` in a Firestore
 transaction. Confirmed reservations cannot exceed `numberOfWinners`, and each night
 can only be booked once. A stay can check out on the day another stay checks in.
 
 Enforcement of campsite season/available weekdays at reservation time is in
-`reservationError`. Deployed Firestore security rules are outside the current creation
-implementation. The data class itself performs no validation or state transitions.
+`reservationError`. Lottery creation constrains offered stay dates in the form and
+rechecks current campsite availability in the save transaction using
+`lotteryStayAvailabilityError`. Registration and booking windows can precede the
+campsite's season. A campsite availability edit also affects subsequent reservation
+checks for existing lotteries; saved lotteries are not automatically rewritten.
+Deployed Firestore security rules are outside the current implementation.
+The data class constructor performs no creation validation or state transitions;
+`draw` validates only its requested winner count.

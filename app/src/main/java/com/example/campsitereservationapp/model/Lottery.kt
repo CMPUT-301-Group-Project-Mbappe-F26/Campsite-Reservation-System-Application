@@ -5,8 +5,10 @@ package com.example.campsitereservationapp.model
  * `lotteries/{id}` in Firestore. Linked users and campsites are referenced by ID.
  *
  * Dates are date-only `yyyy-MM-dd` strings, matching [Campsite] and [Reservation].
- * The form describes start dates as 00:00 and end dates as 11:59; this model stores
- * neither times nor a time zone. Registration must end before the booking start date,
+ * Registration and booking start dates mean 00:00 and end dates mean 23:59 (11:59 PM),
+ * interpreted in Alberta's `America/Edmonton` time zone. Stay end is an exclusive
+ * checkout date, matching [Reservation]. This model stores neither
+ * times nor a time zone. Registration must end before the booking start date,
  * and booking must end before the stay start date. Period endpoints cannot be shared.
  *
  * Validation belongs to the creation service, not the constructor. Defaults support
@@ -24,13 +26,15 @@ package com.example.campsitereservationapp.model
  * @property bookingStartDate First date selected entrants may reserve, after registration ends.
  * @property bookingEndDate Last date selected entrants may reserve, on or after booking start.
  * @property stayStartDate First campsite stay date offered, after booking ends.
- * @property stayEndDate End of the offered stay period, strictly after stay start.
+ * @property stayEndDate Exclusive checkout end of the offered stay period, strictly after stay start.
+ * Its preceding night must be within the campsite's current availability.
  * @property registered Firebase user IDs registered for the lottery waiting list.
  * @property pending Firebase user IDs selected and awaiting a reservation decision.
  * @property booked Reservations made through this lottery. Confirmed ones count toward
  * [numberOfWinners], and their nights cannot be booked again.
  * @property useMaxCapacity Whether the owner selected Max. When true, [numberOfWinners]
  * must equal the campsite's current maximum occupancy.
+ * @property drawCompleted Whether the service has already saved the initial draw, including an empty draw.
  * @see com.example.campsitereservationapp.service.LotteryService
  */
 data class Lottery(
@@ -47,5 +51,28 @@ data class Lottery(
     val registered: List<String> = emptyList(),
     val pending: List<String> = emptyList(),
     val booked: List<Reservation> = emptyList(),
-    val useMaxCapacity: Boolean = false
-)
+    val useMaxCapacity: Boolean = false,
+    val drawCompleted: Boolean = false
+) {
+    /**
+     * Randomly selects distinct user IDs from [registered], without changing this lottery.
+     *
+     * Returns every registered user in their existing order when there are no more
+     * entrants than requested winners. Otherwise, samples the requested number
+     * without replacement. Duplicate registrations count as one entrant.
+     *
+     * This function does not enforce the registration deadline, update [pending],
+     * or save results to Firebase. Calling it again performs a new draw.
+     *
+     * @param amountOfWinners Maximum number of distinct users to select; zero selects nobody.
+     * @return Selected user IDs, containing at most [amountOfWinners] entries.
+     * @throws IllegalArgumentException If [amountOfWinners] is negative.
+     */
+    fun draw(amountOfWinners: Int): List<String> {
+        require(amountOfWinners >= 0) { "The number of winners cannot be negative." }
+        if (amountOfWinners == 0) return emptyList()
+        val entrants = registered.distinct()
+        return if (entrants.size <= amountOfWinners) entrants
+        else entrants.shuffled().take(amountOfWinners)
+    }
+}
