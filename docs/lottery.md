@@ -78,7 +78,9 @@ the Firestore transaction. Cancelling the form does not save a lottery.
 ## Date and participant semantics
 
 Registration and booking windows start at 00:00 and end at 23:59 (11:59 PM) on the
-selected date in Alberta's `America/Edmonton` time zone, including daylight saving time.
+selected Alberta date. From November 1, 2026, Alberta Time is permanently UTC-6;
+earlier dates follow historical `America/Edmonton` daylight saving rules. Both draw
+implementations explicitly apply the new policy to support older timezone databases.
 Stay end is an exclusive checkout date, matching the reservation implementation.
 The model stores only dates, without a time or time zone. It does not itself schedule
 registration opening/closing or winner draws.

@@ -158,15 +158,19 @@ internal fun prepareLotteryDraw(lottery: Lottery, nowMillis: Long): Lottery {
  * Converts the first allowed draw time to epoch milliseconds using Alberta local time.
  *
  * The entire registration end date remains available to entrants. Draws start at
- * 00:00 the following day in `America/Edmonton`, respecting daylight saving changes.
- * Calendar-day addition is used because a local day can be 23 or 25 hours long.
+ * 00:00 the following Alberta day. From November 1, 2026, Alberta uses permanent
+ * UTC-6. That offset is explicit so older Android timezone databases do not apply
+ * an obsolete winter fallback. Earlier dates retain historical Edmonton rules.
+ * Calendar-day addition also handles historical daylight saving transitions.
  *
  * @param registrationEndDate Strict `yyyy-MM-dd` registration end date.
  * @return Midnight immediately after that date, as epoch milliseconds.
  * @throws IllegalArgumentException If the date is missing, malformed, or impossible.
  */
 internal fun lotteryDrawOpensAt(registrationEndDate: String): Long {
-    val zone = TimeZone.getTimeZone("America/Edmonton")
+    val zone = TimeZone.getTimeZone(
+        if (registrationEndDate >= "2026-11-01") "GMT-06:00" else "America/Edmonton"
+    )
     val format = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
         isLenient = false
         timeZone = zone

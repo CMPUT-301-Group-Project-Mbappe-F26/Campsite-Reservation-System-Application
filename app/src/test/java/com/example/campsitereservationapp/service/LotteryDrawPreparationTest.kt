@@ -99,14 +99,37 @@ class LotteryDrawPreparationTest {
     }
 
     @Test
-    fun springDaylightSavingTransitionUsesCalendarDayInsteadOf24Hours() {
+    fun spring2027UsesPermanentAlbertaTime() {
         assertEquals(Instant.parse("2027-03-15T06:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2027-03-14"))
-        assertEquals(23L * 60 * 60 * 1000, lotteryDrawOpensAt("2027-03-14") - lotteryDrawOpensAt("2027-03-13"))
+        assertEquals(24L * 60 * 60 * 1000, lotteryDrawOpensAt("2027-03-14") - lotteryDrawOpensAt("2027-03-13"))
     }
 
     @Test
-    fun fallDaylightSavingTransitionUsesCalendarDayInsteadOf24Hours() {
-        assertEquals(Instant.parse("2027-11-08T07:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2027-11-07"))
-        assertEquals(25L * 60 * 60 * 1000, lotteryDrawOpensAt("2027-11-07") - lotteryDrawOpensAt("2027-11-06"))
+    fun fall2027UsesPermanentAlbertaTimeWithoutFallingBack() {
+        assertEquals(Instant.parse("2027-11-08T06:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2027-11-07"))
+        assertEquals(24L * 60 * 60 * 1000, lotteryDrawOpensAt("2027-11-07") - lotteryDrawOpensAt("2027-11-06"))
+    }
+
+    @Test
+    fun winter2027UsesUtcMinusSix() {
+        assertEquals(Instant.parse("2027-01-16T06:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2027-01-15"))
+    }
+
+    @Test
+    fun november2026PolicyBoundaryDoesNotFallBack() {
+        assertEquals(Instant.parse("2026-11-01T06:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2026-10-31"))
+        assertEquals(Instant.parse("2026-11-02T06:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2026-11-01"))
+    }
+
+    @Test
+    fun historicalSpringTransitionStillHas23Hours() {
+        assertEquals(Instant.parse("2025-03-10T06:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2025-03-09"))
+        assertEquals(23L * 60 * 60 * 1000, lotteryDrawOpensAt("2025-03-09") - lotteryDrawOpensAt("2025-03-08"))
+    }
+
+    @Test
+    fun historicalFallTransitionStillHas25Hours() {
+        assertEquals(Instant.parse("2025-11-03T07:00:00Z").toEpochMilli(), lotteryDrawOpensAt("2025-11-02"))
+        assertEquals(25L * 60 * 60 * 1000, lotteryDrawOpensAt("2025-11-02") - lotteryDrawOpensAt("2025-11-01"))
     }
 }

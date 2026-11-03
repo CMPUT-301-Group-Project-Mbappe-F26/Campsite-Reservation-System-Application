@@ -7,7 +7,9 @@ or send notifications. It is **disabled until configured**.
 ## Schedule and data changes
 
 The workflow checks hourly at seven minutes past the hour. GitHub schedules use UTC;
-the script checks dates in `America/Edmonton`, including daylight saving changes.
+the script checks Alberta calendar dates. Alberta adopted permanent UTC-6 on
+November 1, 2026. The script applies this explicitly so old and updated runner
+timezone databases agree; earlier dates use historical `America/Edmonton` rules.
 Registration remains open through 23:59 on `registrationEndDate`. A lottery becomes
 eligible at 00:00 the following Alberta day, and the next successful workflow draws it.
 GitHub scheduling is best effort and can be delayed; this is not an exact-midnight guarantee.
@@ -142,11 +144,13 @@ npm.cmd --prefix tools/lottery-scheduler ci --ignore-scripts --no-audit --no-fun
 npm.cmd --prefix tools/lottery-scheduler test
 ```
 
-Tests cover sampling, deadlines, DST, retries, ownership checks, dry runs, and paging.
+Tests cover sampling, deadlines, permanent Alberta Time, historical DST, retries,
+ownership checks, dry runs, and paging.
 They use a local in-memory adapter for transaction/query behavior; they do not test
 live IAM, GitHub execution, or a real Firestore transaction conflict.
 
 `src/draw.js` mirrors the Kotlin model's sampling behavior and deadline convention.
 Keep both implementations and their tests aligned when changing the draw rules.
+The time policy follows [Alberta's official time system](https://www.alberta.ca/albertas-new-time-system-abt).
 Do not run `npm run draw` locally without intentionally configuring credentials and
 `GOOGLE_CLOUD_PROJECT`; the command writes results to that project.

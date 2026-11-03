@@ -92,16 +92,42 @@ test("invalid dates, participant lists, and marker values are rejected", () => {
   assert.throws(() => prepareDraw({ ...lottery, booked: ["alice"] }, midnight), /booked must contain reservation objects/);
 });
 
-test("spring daylight saving deadline follows Alberta local midnight", () => {
+test("spring 2027 deadline follows permanent Alberta time", () => {
   const spring = { ...lottery, registrationEndDate: "2027-03-14" };
   assert.equal(prepareDraw(spring, new Date("2027-03-15T05:59:59Z")), null);
   assert.equal(prepareDraw(spring, new Date("2027-03-15T06:00:00Z")).drawCompleted, true);
 });
 
-test("fall daylight saving deadline follows Alberta local midnight", () => {
+test("fall 2027 deadline follows permanent Alberta time without falling back", () => {
   const fall = { ...lottery, registrationEndDate: "2027-11-07" };
-  assert.equal(prepareDraw(fall, new Date("2027-11-08T06:59:59Z")), null);
-  assert.equal(prepareDraw(fall, new Date("2027-11-08T07:00:00Z")).drawCompleted, true);
+  assert.equal(prepareDraw(fall, new Date("2027-11-08T05:59:59.999Z")), null);
+  assert.equal(prepareDraw(fall, new Date("2027-11-08T06:00:00Z")).drawCompleted, true);
+});
+
+test("winter 2027 deadline also uses UTC-6", () => {
+  const winter = { ...lottery, registrationEndDate: "2027-01-15" };
+  assert.equal(prepareDraw(winter, new Date("2027-01-16T05:59:59.999Z")), null);
+  assert.equal(prepareDraw(winter, new Date("2027-01-16T06:00:00Z")).drawCompleted, true);
+});
+
+test("November 2026 policy takes effect at Alberta midnight", () => {
+  assert.equal(albertaDate(new Date("2026-11-01T05:59:59.999Z")), "2026-10-31");
+  assert.equal(albertaDate(new Date("2026-11-01T06:00:00Z")), "2026-11-01");
+  const transition = { ...lottery, registrationEndDate: "2026-11-01" };
+  assert.equal(prepareDraw(transition, new Date("2026-11-02T05:59:59.999Z")), null);
+  assert.equal(prepareDraw(transition, new Date("2026-11-02T06:00:00Z")).drawCompleted, true);
+});
+
+test("historical fall 2025 dates retain the previous UTC-7 rule", () => {
+  const historical = { ...lottery, registrationEndDate: "2025-11-02" };
+  assert.equal(prepareDraw(historical, new Date("2025-11-03T06:59:59.999Z")), null);
+  assert.equal(prepareDraw(historical, new Date("2025-11-03T07:00:00Z")).drawCompleted, true);
+});
+
+test("historical spring 2025 dates retain the previous daylight saving rule", () => {
+  const historical = { ...lottery, registrationEndDate: "2025-03-09" };
+  assert.equal(prepareDraw(historical, new Date("2025-03-10T05:59:59.999Z")), null);
+  assert.equal(prepareDraw(historical, new Date("2025-03-10T06:00:00Z")).drawCompleted, true);
 });
 
 test("runner UTC date does not prematurely close an Alberta registration day", () => {
