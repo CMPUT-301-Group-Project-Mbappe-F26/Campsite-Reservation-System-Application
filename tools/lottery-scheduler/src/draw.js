@@ -1,12 +1,23 @@
 import { randomInt } from "node:crypto";
 
 export const LOTTERY_TIME_ZONE = "America/Edmonton";
+// Alberta adopted permanent UTC-6 on November 1, 2026. Apply that policy explicitly
+// so machines with older timezone databases agree with updated GitHub runners.
+// https://www.alberta.ca/albertas-new-time-system-abt
+const PERMANENT_ALBERTA_TIME_START = Date.parse("2026-11-01T06:00:00Z");
+const SIX_HOURS = 6 * 60 * 60 * 1000;
 
 /** A stored lottery is invalid and must be reviewed rather than overwritten. */
 export class DrawDataError extends Error {}
 
-/** Returns the current Alberta calendar date, independent of the runner's time zone. */
+/**
+ * Returns the Alberta calendar date, independent of the runner's timezone database.
+ * Uses permanent UTC-6 from November 2026; earlier dates retain historical Edmonton rules.
+ */
 export function albertaDate(now = new Date()) {
+  if (now.getTime() >= PERMANENT_ALBERTA_TIME_START) {
+    return new Date(now.getTime() - SIX_HOURS).toISOString().slice(0, 10);
+  }
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: LOTTERY_TIME_ZONE,
     year: "numeric", month: "2-digit", day: "2-digit",
