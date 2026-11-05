@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.ensureActive
@@ -54,6 +55,8 @@ import java.util.Locale
 @Composable
 fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
     val service = remember { CampsiteService() }
+    var openLottery by remember(campsiteId) { mutableStateOf<Lottery?>(null) } // Store the campsite's open lottery
+    var lotteryStatus by remember(campsiteId) { mutableStateOf("Checking lottery...") }  // Lottery status message
     val ownerId = rememberCampsiteOwnerId()
     var campsite by remember(campsiteId, ownerId) { mutableStateOf<Campsite?>(null) }
     var loading by remember(campsiteId, ownerId) { mutableStateOf(true) }
@@ -77,6 +80,21 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
             error = "Could not load this campsite. Please try again."
         } finally {
             loading = false
+        }
+    }
+    // If selected campsite has an open lottery
+    LaunchedEffect(campsiteId) {
+        try {
+            openLottery = service.getOpenLottery(campsiteId)
+            // Update status
+            if (openLottery != null) {
+                lotteryStatus = "Registration open"
+            } else {
+                lotteryStatus = "No open lottery"
+            }
+        } catch (e: Exception) {
+            coroutineContext.ensureActive()
+            lotteryStatus = "Could not load lottery information"
         }
     }
 
@@ -135,7 +153,54 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                             DetailRow("Coordinates", String.format(Locale.CANADA, "%.5f, %.5f", site.latitude, site.longitude))
                             DetailRow("Max occupancy", site.maxOccupancy?.let { "$it guests" } ?: "No maximum")
                             DetailRow("Price", String.format(Locale.CANADA, "$%.2f CAD / night", site.pricePerNight))
+
+                            if (site.averageRating != null) {  // Display campsite rating if available
+                                val rating = site.averageRating
+                                val fullStars = rating.toInt().coerceIn(0, 5)
+                                val stars = "\u2605".repeat(fullStars) + "\u2606".repeat(5 - fullStars)
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = stars,
+                                        color = Color(0xFFFFC107)
+                                    )
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    // Rating
+                                    Text(text = "$rating / 5")
+                                }
+                            } else {
+                                Text(  // No rating
+                                    text = "No ratings yet",
+                                    color = PinedrawColors.TextSecondary
+                                )
+                            }
                         }
+
+                        Text(  // Display lottery information
+                            text = "Lottery Information",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+
+                        DetailCard {  // Show whether registration is open
+                            Text(
+                                text = lotteryStatus,
+                                color = PinedrawColors.TextSecondary
+                            )
+
+                            if (openLottery != null) {  // Show registration dates if a lottery is open
+                                DetailRow(
+                                    "Registration starts",
+                                    openLottery!!.registrationStartDate
+                                )
+
+                                DetailRow(
+                                    "Registration ends",
+                                    openLottery!!.registrationEndDate
+                                )
+                            }
+                        }
+
                         DetailCard {
                             Text("Description", style = MaterialTheme.typography.titleLarge)
                             Text(site.description.ifBlank { "No description provided." }, color = PinedrawColors.TextSecondary)
@@ -170,6 +235,23 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                                 rules = site.rules,
                                 onSaved = { campsite = site.copy(rules = it) }
                             )
+                        }
+                        // Adds lottery info for the campsite
+                        Text(
+                            text = "Lottery Information",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+
+                        DetailCard {
+                            Text(
+                                text = lotteryStatus,
+                                color = PinedrawColors.TextSecondary
+                            )
+
+                            if (openLottery != null) {
+                                DetailRow("Registration starts", openLottery!!.registrationStartDate)
+                                DetailRow("Registration ends", openLottery!!.registrationEndDate)
+                            }
                         }
                     }
                 }

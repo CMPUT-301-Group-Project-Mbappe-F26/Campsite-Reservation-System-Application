@@ -55,6 +55,8 @@ fun MainScreen(
     var registering by rememberSaveable { mutableStateOf(false) }
     var showingCampsites by rememberSaveable { mutableStateOf(false) }
     var campsiteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var entrantCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from Discover
+    var searchText by rememberSaveable { mutableStateOf("") }  // Keep the search text when opening and closing campsite details
     var reservationId by rememberSaveable { mutableStateOf<String?>(null) }
     var reserveLotteryId by rememberSaveable { mutableStateOf<String?>(null) }
     val registration: CampsiteRegistrationViewModel = viewModel()
@@ -79,11 +81,13 @@ fun MainScreen(
     }
     BackHandler(enabled = reservationId != null) { reservationId = null }
     BackHandler(enabled = reserveLotteryId != null) { reserveLotteryId = null }
+    BackHandler(enabled = entrantCampsiteId != null) { entrantCampsiteId = null }  // Return to Discover after leaving campsite details
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         containerColor = PinedrawColors.Background,
         bottomBar = {
-            if (!editing && !hostMode && reservationId == null && reserveLotteryId == null) {
+            // Hide bottom navigation when some other screen is open
+            if (!editing && !hostMode && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
                 PinedrawNavBar(
                     tabs = listOf("Discover", "Lotteries", "Extra", "Profile"),
                     selectedTab = selectedTab,
@@ -171,10 +175,18 @@ fun MainScreen(
                         selectedTab = 2 // Show the new reservation
                     }
                 )
+                // Open campsite selected from discover
+                entrantCampsiteId != null -> CampsiteDetailsScreen(
+                    campsiteId = entrantCampsiteId!!,
+                    onBack = { entrantCampsiteId = null }
+                )
 
                 selectedTab == 0 -> HomeScreen(
                     user = user,
-                    onProfileClick = { selectedTab = 3 } // Open Profile tab
+                    onProfileClick = { selectedTab = 3 }, // Open Profile tab
+                    onCampsiteClick = { entrantCampsiteId = it },
+                    searchText = searchText,  // Remember the previous search
+                    onSearchTextChange = { searchText = it }
                 )
                 selectedTab == 1 -> EmptyTab(
                     "Lotteries",
