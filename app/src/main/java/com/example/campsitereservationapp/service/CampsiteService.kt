@@ -13,6 +13,12 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
+/**
+ * Handles campsite data using Firebase.
+ *
+ * Provides functions for creating campsites, retrieving campsite
+ * information, listening for updates, and checking open lotteries.
+ */
 class CampsiteService {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()

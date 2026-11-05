@@ -25,7 +25,20 @@ import com.example.campsitereservationapp.service.CampsiteService
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.DisposableEffect
+
 // Shows the welcome screen and profile shortcut.
+/**
+ * Displays the Discover screen where users can browse and search campsites.
+ *
+ * Loads published campsites from Firebase and shows their basic information.
+ * Users can search by name or location and open a campsite to see its details.
+ *
+ * @param user The currently signed-in user.
+ * @param onProfileClick Opens the user's profile.
+ * @param onCampsiteClick Opens the selected campsite using its ID.
+ * @param searchText The current text entered in the search bar.
+ * @param onSearchTextChange Updates the search text when the user types.
+ */
 @Composable
 fun HomeScreen(
     user: User,
@@ -223,6 +236,16 @@ fun HomeScreen(
 }
 
 // Find campsites using their name or location
+/**
+ * Filters campsites based on the user's search.
+ *
+ * Searches campsite names and locations without considering uppercase
+ * or lowercase letters.
+ *
+ * @param campsites List of campsites to search through.
+ * @param searchText Text entered by the user.
+ * @return A list of campsites matching the search.
+ */
 fun filterCampsites(
     campsites: List<Campsite>,
     searchText: String
@@ -234,6 +257,15 @@ fun filterCampsites(
     }
 }
 // For testing
+/**
+ * Gets the campsites that should appear on the Discover screen.
+ *
+ * Removes unpublished campsites and applies the user's search.
+ *
+ * @param campsites List of available campsites.
+ * @param searchText Current search text.
+ * @return A list of published campsites matching the search.
+ */
 fun getDisplayedCampsites(
     campsites: List<Campsite>,
     searchText: String
@@ -241,12 +273,28 @@ fun getDisplayedCampsites(
     val publishedCampsites = campsites.filter { it.published }
     return filterCampsites(publishedCampsites, searchText)
 }
-
+/**
+ * Converts a campsite rating into a string of stars.
+ *
+ * Uses filled and empty stars to display the rating.
+ * Decimal ratings are rounded down for the star display.
+ *
+ * @param rating The campsite's average rating.
+ * @return A string containing five stars.
+ */
 fun getRatingStars(rating: Double): String {
     val fullStars = rating.toInt().coerceIn(0, 5)
     return "\u2605".repeat(fullStars) + "\u2606".repeat(5 - fullStars)
 }
-
+/**
+ * Gets the text used to display a campsite's rating.
+ *
+ * Shows the numerical rating when available, or a message
+ * when the campsite has no ratings.
+ *
+ * @param rating The average rating, or null if there are no ratings.
+ * @return The formatted rating or "No ratings yet".
+ */
 fun getRatingText(rating: Double?): String {
     if (rating == null) {
         return "No ratings yet"

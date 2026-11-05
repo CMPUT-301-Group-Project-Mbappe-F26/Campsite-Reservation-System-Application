@@ -407,10 +407,30 @@ internal fun CampsitePhoto(url: String?, modifier: Modifier = Modifier) {
     }
 }
 // Testing purposes functions
+/**
+ * Checks if a user can view a campsite.
+ *
+ * Published campsites can be viewed by anyone, while unpublished
+ * campsites can only be viewed by their owner.
+ *
+ * @param campsite The campsite being checked.
+ * @param userId ID of the current user.
+ * @return True if the user can view the campsite.
+ */
 fun canViewCampsite(campsite: Campsite, userId: String?): Boolean {
     return campsite.published || campsite.isOwnedBy(userId)
 }
-
+/**
+ * Checks if the owner controls should be displayed.
+ *
+ * Owner controls are only shown when the owner opens the
+ * campsite outside of Discover.
+ *
+ * @param campsite The campsite being viewed.
+ * @param userId ID of the current user.
+ * @param fromDiscover True if the user opened the campsite from Discover.
+ * @return True if the owner controls should be shown.
+ */
 fun canShowOwnerControls(
     campsite: Campsite,
     userId: String?,
@@ -418,7 +438,12 @@ fun canShowOwnerControls(
 ): Boolean {
     return !fromDiscover && campsite.isOwnedBy(userId)
 }
-
+/**
+ * Gets the correct back button label based on where the user came from.
+ *
+ * @param fromDiscover True if the campsite was opened from Discover.
+ * @return "Discover" or "My Campsites".
+ */
 fun getCampsiteBackLabel(fromDiscover: Boolean): String {
     if (fromDiscover) {
         return "Discover"
