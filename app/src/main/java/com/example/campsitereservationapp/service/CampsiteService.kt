@@ -6,6 +6,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.tasks.await
+import com.google.firebase.firestore.ListenerRegistration
+import com.example.campsitereservationapp.model.Lottery
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 class CampsiteService {
     private val db = FirebaseFirestore.getInstance()
@@ -51,6 +57,42 @@ class CampsiteService {
             doc.toObject(Campsite::class.java)?.copy(id = doc.id) // Use the actual Firestore document ID.
         }
     }
+    /* Gets all published campsites from Firestore
+     * return A list of published campsites
+     */
+    suspend fun getPublishedCampsites(): List<Campsite> {
+        val result = db.collection("campsites")
+            .whereEqualTo("published", true)
+            .get()
+            .await()
+        // Convert into Campsite objects, Use DocID for firestore as CampsiteID
+        return result.documents.mapNotNull { doc ->
+            doc.toObject(Campsite::class.java)?.copy(id = doc.id)
+        }
+    }
+
+    // Listens to changes in the published campsites
+    fun listenToPublishedCampsites(
+        onUpdate: (List<Campsite>) -> Unit,
+        onError: () -> Unit
+    ): ListenerRegistration {
+        // Listen for changes to published campsites
+        return db.collection("campsites")
+            .whereEqualTo("published", true)
+            .addSnapshotListener { snapshot, error ->
+                // Checking for errors
+                if (error != null) {
+                    onError()
+                } else {
+                    // Convert documents into Campsite objects
+                    val campsites = snapshot?.documents?.mapNotNull { doc ->
+                        doc.toObject(Campsite::class.java)?.copy(id = doc.id)
+                    } ?: emptyList()
+                    // Sends updated list to the Screen
+                    onUpdate(campsites)
+                }
+            }
+    }
 
     // Fetches one campsite using its Firestore document ID.
     suspend fun getCampsite(id: String): Campsite? {
@@ -65,4 +107,33 @@ class CampsiteService {
         if (auth.currentUser == null) throw Exception("Not signed in")
         db.collection("campsites").document(id).update("rules", rules.trim()).await()
     }
+    suspend fun getOpenLottery(campsiteId: String): Lottery? {
+
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.CANADA)
+        dateFormat.timeZone = TimeZone.getTimeZone("America/Edmonton")
+        val today = dateFormat.format(Date())
+
+        val result = db.collection("lotteries")
+            .whereEqualTo("campsiteId", campsiteId)
+            .get()
+            .await()
+
+        for (document in result.documents) {
+            val lottery = document.toObject(Lottery::class.java)
+
+            if (lottery != null) {
+                val hasStarted = lottery.registrationStartDate <= today
+                val hasNotEnded = lottery.registrationEndDate >= today
+                val notDrawn = !lottery.drawCompleted
+
+                if (hasStarted && hasNotEnded && notDrawn) {
+                    return lottery
+                }
+            }
+        }
+
+        return null
+    }
 }
+
+
