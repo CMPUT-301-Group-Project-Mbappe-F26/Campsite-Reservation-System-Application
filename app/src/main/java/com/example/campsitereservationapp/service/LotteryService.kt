@@ -11,12 +11,13 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Creates and draws [Lottery] documents in Firestore using the signed-in owner's identity.
+ * Creates, joins, and draws [Lottery] documents in Firestore.
  *
  * The model is stored at `lotteries/{id}`. Ownership and current campsite capacity
  * are checked in the creation transaction. [drawLottery] saves initial winners to
- * pending after registration closes. This service does not schedule automatic draws
- * or manage registration and reservation actions.
+ * pending after registration closes. Entrants join through [joinWaitingList], which
+ * rechecks the current lottery and campsite inside one transaction. This service does
+ * not schedule automatic draws or manage reservation actions.
  */
 class LotteryService {
     private val db = FirebaseFirestore.getInstance()
@@ -80,6 +81,75 @@ class LotteryService {
     }
 
     /**
+     * Loads currently open lotteries and their published campsites for entrant browsing.
+     *
+     * Date filtering uses the same Alberta calendar convention as joining. The join
+     * transaction remains authoritative because a registration can close or fill after
+     * this list is loaded.
+     */
+    suspend fun getOpenLotteryListings(nowMillis: Long = System.currentTimeMillis()): List<LotteryListing> {
+        val today = lotteryAlbertaDate(nowMillis)
+        val lotteries = db.collection("lotteries").get().await().documents.mapNotNull { snapshot ->
+            snapshot.toObject(Lottery::class.java)?.copy(id = snapshot.id)
+        }.filter { lottery ->
+            !lottery.drawCompleted && today >= lottery.registrationStartDate && today <= lottery.registrationEndDate
+        }
+        return lotteries.mapNotNull { lottery ->
+            val campsite = db.collection("campsites").document(lottery.campsiteId).get().await()
+                .toObject(Campsite::class.java)?.copy(id = lottery.campsiteId)
+            campsite?.takeIf { it.published }?.let { LotteryListing(lottery, it) }
+        }.sortedWith(compareBy({ it.lottery.registrationEndDate }, { it.campsite.name }))
+    }
+
+    /**
+     * Atomically registers the signed-in entrant for a lottery.
+     *
+     * The latest lottery and campsite are read in the transaction before checking the
+     * Alberta registration date, waiting-list capacity, duplicate participant state,
+     * and campsite occupancy. A successful write adds the UID once and stores its party
+     * size. Concurrent attempts are retried by Firestore against the newest values.
+     *
+     * @param lotteryId Firestore lottery document ID.
+     * @param groupSize Number of people in the entrant's party.
+     * @return The committed local representation of the lottery.
+     * @throws IllegalArgumentException When the ID or party size is invalid.
+     * @throws IllegalStateException When joining is not currently allowed.
+     */
+    suspend fun joinWaitingList(lotteryId: String, groupSize: Int): Lottery {
+        require(lotteryId.isNotBlank() && '/' !in lotteryId) { "Provide a valid lottery document ID." }
+        val uid = auth.currentUser?.uid ?: error("Please sign in before joining a lottery.")
+        val document = db.collection("lotteries").document(lotteryId)
+        return db.runTransaction { transaction ->
+            val snapshot = transaction.get(document)
+            val lottery = snapshot.toObject(Lottery::class.java)?.copy(id = snapshot.id)
+                ?: error("This lottery is no longer available.")
+            require(lottery.campsiteId.isNotBlank() && '/' !in lottery.campsiteId) {
+                "This lottery has no valid campsite."
+            }
+            val siteSnapshot = transaction.get(db.collection("campsites").document(lottery.campsiteId))
+            val campsite = siteSnapshot.toObject(Campsite::class.java)
+                ?: error("This campsite is no longer available.")
+            check(siteSnapshot.exists() && campsite.published) { "This campsite is not available to entrants." }
+            check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+            val joinError = waitingListJoinError(
+                lottery = lottery,
+                campsite = campsite,
+                entrantId = uid,
+                groupSize = groupSize,
+                nowMillis = System.currentTimeMillis()
+            )
+            check(joinError == null) { joinError.orEmpty() }
+            val registered = lottery.registered + uid
+            val groupSizes = lottery.registeredGroupSizes + (uid to groupSize)
+            transaction.update(document, mapOf(
+                "registered" to registered,
+                "registeredGroupSizes" to groupSizes
+            ))
+            lottery.copy(registered = registered, registeredGroupSizes = groupSizes)
+        }.await()
+    }
+
+    /**
      * Loads a lottery, draws its configured winner count, and saves pending winners atomically.
      *
      * The caller must be signed in as both the lottery and campsite owner, including
@@ -127,6 +197,53 @@ class LotteryService {
             drawn
         }.await()
     }
+}
+
+/** A lottery paired with the campsite information required by the entrant UI. */
+data class LotteryListing(val lottery: Lottery, val campsite: Campsite)
+
+/**
+ * Returns a displayable reason an entrant cannot join, or null when joining is valid.
+ *
+ * Registration start and end dates are inclusive Alberta calendar dates. Participant
+ * state checks include registered, pending, and booked users so a person cannot enter
+ * the same lottery again after the draw has changed their state.
+ */
+internal fun waitingListJoinError(
+    lottery: Lottery,
+    campsite: Campsite,
+    entrantId: String,
+    groupSize: Int,
+    nowMillis: Long
+): String? {
+    val maximum = campsite.maxOccupancy
+    val today = lotteryAlbertaDate(nowMillis)
+    val alreadyEntered = entrantId in lottery.registered || entrantId in lottery.pending ||
+        lottery.booked.any { it.entrantId == entrantId }
+    return when {
+        entrantId.isBlank() -> "Please sign in before joining a lottery."
+        lottery.ownerId == entrantId -> "Campsite owners cannot enter their own lottery."
+        groupSize <= 0 -> "Party size must be at least 1."
+        maximum == null || maximum <= 0 -> "This campsite does not have a valid maximum occupancy."
+        groupSize > maximum -> "Party size cannot exceed this campsite's maximum occupancy of $maximum."
+        lottery.waitingListCapacity <= 0 -> "This lottery's waiting list is unavailable."
+        alreadyEntered -> "You are already on this lottery's waiting list."
+        lottery.registered.distinct().size >= lottery.waitingListCapacity -> "This lottery's waiting list is full."
+        lottery.drawCompleted -> "This lottery has already been drawn."
+        today < lottery.registrationStartDate -> "Registration for this lottery has not opened yet."
+        today > lottery.registrationEndDate -> "Registration for this lottery has closed."
+        else -> null
+    }
+}
+
+/** Formats an instant as the Alberta calendar date used by lottery registration. */
+internal fun lotteryAlbertaDate(nowMillis: Long): String {
+    val historical = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
+        timeZone = TimeZone.getTimeZone("America/Edmonton")
+    }.format(nowMillis)
+    val zone = if (historical >= "2026-11-01") TimeZone.getTimeZone("GMT-06:00")
+        else TimeZone.getTimeZone("America/Edmonton")
+    return SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { timeZone = zone }.format(nowMillis)
 }
 
 /**
@@ -227,6 +344,7 @@ internal fun validateLottery(lottery: Lottery) {
         "The lottery must belong to a campsite and its owner."
     }
     require(lottery.numberOfWinners > 0) { "Enter a positive whole number of winners." }
+    require(lottery.waitingListCapacity > 0) { "The waiting list must allow at least one entrant." }
     val dates = listOf(lottery.registrationStartDate, lottery.registrationEndDate,
         lottery.bookingStartDate, lottery.bookingEndDate, lottery.stayStartDate, lottery.stayEndDate)
     val parser = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }

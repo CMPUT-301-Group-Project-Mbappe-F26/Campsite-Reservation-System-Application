@@ -46,12 +46,15 @@ User and campsite IDs reference separate documents; their full objects are not e
 | `stayStartDate` | `String` | First campsite stay date offered. |
 | `stayEndDate` | `String` | Exclusive checkout end of the offered stay period. |
 | `registered` | `List<String>` | User IDs registered for the waiting list. |
+| `registeredGroupSizes` | `Map<String, Int>` | Party size chosen by each registered user, keyed by UID. |
+| `waitingListCapacity` | `Int` | Maximum distinct entrants accepted; defaults to 1,000. |
 | `pending` | `List<String>` | Selected user IDs awaiting a reservation decision. |
 | `booked` | `List<Reservation>` | Reservations made through this lottery. |
 | `useMaxCapacity` | `Boolean` | Whether the owner selected the Max checkbox. |
 | `drawCompleted` | `Boolean` | Whether the initial draw has been saved, including a draw with no entrants. |
 
-String fields default to empty strings, winner count to zero, lists to empty lists,
+String fields default to empty strings, winner count to zero, lists and maps to empty,
+waiting-list capacity to 1,000,
 and both `useMaxCapacity` and `drawCompleted` to false. These defaults allow Firestore deserialization and
 incomplete drafts. A default object cannot be submitted as a valid lottery.
 
@@ -86,9 +89,19 @@ The model stores only dates, without a time or time zone. It does not itself sch
 registration opening/closing or winner draws.
 
 `registered` and `pending` are stored as arrays of Firebase user IDs, and `booked`
-as an array of reservations. New lotteries start with all three arrays empty. Their
-names describe the intended participant states; joining, drawing winners, booking,
-and moving users between these lists are not implemented by the creation flow.
+as an array of reservations. `registeredGroupSizes` stores the party size captured
+by the confirmation dialog without changing the draw input. New lotteries start with
+all participant collections empty.
+
+## Joining the waiting list
+
+`LotteryService.joinWaitingList` reads the lottery and campsite in one Firestore
+transaction. Before adding the signed-in UID, it checks that the inclusive Alberta
+registration period is open, the draw has not run, the waiting list has room, the
+entrant is not already registered/pending/booked, and the party size is from 1 through
+the campsite's current maximum occupancy. The same transaction updates `registered`
+and `registeredGroupSizes`, so concurrent taps cannot add the entrant twice or exceed
+the waiting-list limit. Cancelling the C01 confirmation dialog never calls the service.
 
 ## Drawing winners
 

@@ -32,6 +32,7 @@ import com.example.campsitereservationapp.campsite.HostDashboardScreen
 import com.example.campsitereservationapp.campsite.MyCampsitesScreen
 import com.example.campsitereservationapp.campsite.CampsiteDetailsScreen
 import com.example.campsitereservationapp.model.User
+import com.example.campsitereservationapp.lottery.LotteriesScreen
 import com.example.campsitereservationapp.profile.EditProfileScreen
 import com.example.campsitereservationapp.profile.ProfileScreen
 import com.example.campsitereservationapp.reservation.MyReservationsScreen
@@ -176,10 +177,7 @@ fun MainScreen(
                     user = user,
                     onProfileClick = { selectedTab = 3 } // Open Profile tab
                 )
-                selectedTab == 1 -> EmptyTab(
-                    "Lotteries",
-                    "Your campsite draws will appear here."
-                )
+                selectedTab == 1 -> LotteriesScreen(user = user)
                 selectedTab == 2 -> MyReservationsScreen(
                     onReservationClick = { reservationId = it },
                     onReserveClick = { reserveLotteryId = it }
