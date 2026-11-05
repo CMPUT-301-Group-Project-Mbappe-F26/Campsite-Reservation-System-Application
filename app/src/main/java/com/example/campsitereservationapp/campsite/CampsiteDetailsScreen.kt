@@ -53,7 +53,7 @@ import java.util.Locale
  */
 // Loads and shows a campsite, with extra options when the signed-in user owns it.
 @Composable
-fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
+fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: Boolean = false) {
     val service = remember { CampsiteService() }
     var openLottery by remember(campsiteId) { mutableStateOf<Lottery?>(null) } // Store the campsite's open lottery
     var lotteryStatus by remember(campsiteId) { mutableStateOf("Checking lottery...") }  // Lottery status message
@@ -72,7 +72,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
             check(ownerId != null) { "Not signed in" }
             val result = withTimeoutOrNull(20000) { service.getCampsite(campsiteId) }
             if (result == null) error = "This campsite is unavailable or could not be loaded. Please try again."
-            else if (!result.published && !result.isOwnedBy(ownerId))
+            else if (!canViewCampsite(result, ownerId))
                 error = "This campsite is unavailable or could not be loaded. Please try again."
             else campsite = result
         } catch (_: Exception) {
@@ -112,7 +112,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
         TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("My Campsites")
+            Text(getCampsiteBackLabel(fromDiscover))  // Returns either discover or my campsites
         }
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -127,7 +127,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                     CampsitePhoto(site.imageUrls.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         Text(site.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
-                        if (site.isOwnedBy(ownerId)) Button(
+                        if (canShowOwnerControls(site, ownerId, fromDiscover)) Button(
                             onClick = { creatingLottery = true },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                             shape = CircleShape,
@@ -230,28 +230,11 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                             Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
                             DetailRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
                             if (site.requireRulesAcceptance) Text("Entrants must accept the rules.", color = PinedrawColors.TextMuted)
-                            if (site.isOwnedBy(ownerId)) OwnerPolicyEditor(
+                            if (canShowOwnerControls(site, ownerId, fromDiscover)) OwnerPolicyEditor(
                                 campsiteId = site.id,
                                 rules = site.rules,
                                 onSaved = { campsite = site.copy(rules = it) }
                             )
-                        }
-                        // Adds lottery info for the campsite
-                        Text(
-                            text = "Lottery Information",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-
-                        DetailCard {
-                            Text(
-                                text = lotteryStatus,
-                                color = PinedrawColors.TextSecondary
-                            )
-
-                            if (openLottery != null) {
-                                DetailRow("Registration starts", openLottery!!.registrationStartDate)
-                                DetailRow("Registration ends", openLottery!!.registrationEndDate)
-                            }
                         }
                     }
                 }
@@ -422,4 +405,24 @@ internal fun CampsitePhoto(url: String?, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+// Testing purposes functions
+fun canViewCampsite(campsite: Campsite, userId: String?): Boolean {
+    return campsite.published || campsite.isOwnedBy(userId)
+}
+
+fun canShowOwnerControls(
+    campsite: Campsite,
+    userId: String?,
+    fromDiscover: Boolean
+): Boolean {
+    return !fromDiscover && campsite.isOwnedBy(userId)
+}
+
+fun getCampsiteBackLabel(fromDiscover: Boolean): String {
+    if (fromDiscover) {
+        return "Discover"
+    }
+
+    return "My Campsites"
 }

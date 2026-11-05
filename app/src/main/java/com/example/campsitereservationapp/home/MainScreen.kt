@@ -178,7 +178,8 @@ fun MainScreen(
                 // Open campsite selected from discover
                 entrantCampsiteId != null -> CampsiteDetailsScreen(
                     campsiteId = entrantCampsiteId!!,
-                    onBack = { entrantCampsiteId = null }
+                    onBack = { entrantCampsiteId = null },
+                    fromDiscover = true
                 )
 
                 selectedTab == 0 -> HomeScreen(
