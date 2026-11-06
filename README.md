@@ -80,3 +80,8 @@ Additional project documentation is available through the GitHub wiki.
 
 ### Project Status
 Features and documentation will continue to be updated as the group completes project requirements.
+
+## License
+
+This project is licensed under the Apache License 2.0.
+See the [LICENSE.md](LICENSE.md) file for detail
