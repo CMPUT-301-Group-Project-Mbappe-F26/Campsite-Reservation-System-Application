@@ -248,10 +248,23 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: 
     }
 }
 
-// Lets the owner edit the campsite policy, saving only after they confirm.
+/**
+ * Lets the owner edit the campsite policy entrants must accept (US 02.11.01).
+ *
+ * Save asks "Are you sure?" before saving, and Cancel discards the draft.
+ *
+ * @param campsiteId Firestore document ID of the campsite.
+ * @param rules The policy currently saved.
+ * @param onSaved Called with the trimmed policy after it is saved.
+ * @param savePolicy Saves the policy; replaced in intent tests so no Firebase call is made.
+ */
 @Composable
-private fun OwnerPolicyEditor(campsiteId: String, rules: String, onSaved: (String) -> Unit) {
-    val service = remember { CampsiteService() }
+internal fun OwnerPolicyEditor(
+    campsiteId: String,
+    rules: String,
+    onSaved: (String) -> Unit,
+    savePolicy: suspend (String) -> Unit = { CampsiteService().updateCampsitePolicy(campsiteId, it) }
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var editing by rememberSaveable(campsiteId) { mutableStateOf(false) }
@@ -300,7 +313,7 @@ private fun OwnerPolicyEditor(campsiteId: String, rules: String, onSaved: (Strin
                 scope.launch {
                     try {
                         val saved = withTimeoutOrNull(20000) {
-                            service.updateCampsitePolicy(campsiteId, draft)
+                            savePolicy(draft)
                             true
                         }
                         if (saved == null) error = "Could not save the policy. Please try again."
