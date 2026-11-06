@@ -29,6 +29,9 @@ package com.example.campsitereservationapp.model
  * @property stayEndDate Exclusive checkout end of the offered stay period, strictly after stay start.
  * Its preceding night must be within the campsite's current availability.
  * @property registered Firebase user IDs registered for the lottery waiting list.
+ * @property registeredGroupSizes Party size selected by each registered user, keyed by Firebase UID.
+ * Older lottery documents can omit this map; their registrations remain valid.
+ * @property waitingListCapacity Maximum number of distinct entrants accepted before registration is full.
  * @property pending Firebase user IDs selected and awaiting a reservation decision.
  * @property booked Reservations made through this lottery. Confirmed ones count toward
  * [numberOfWinners], and their nights cannot be booked again.
@@ -49,6 +52,8 @@ data class Lottery(
     val stayStartDate: String = "",
     val stayEndDate: String = "",
     val registered: List<String> = emptyList(),
+    val registeredGroupSizes: Map<String, Int> = emptyMap(),
+    val waitingListCapacity: Int = DEFAULT_WAITING_LIST_CAPACITY,
     val pending: List<String> = emptyList(),
     val booked: List<Reservation> = emptyList(),
     val useMaxCapacity: Boolean = false,
@@ -76,3 +81,6 @@ data class Lottery(
         else entrants.shuffled().take(amountOfWinners)
     }
 }
+
+/** Default safety limit for a lottery waiting list when the owner has not configured one. */
+const val DEFAULT_WAITING_LIST_CAPACITY = 1000

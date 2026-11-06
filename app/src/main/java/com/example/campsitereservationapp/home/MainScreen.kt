@@ -34,6 +34,7 @@ import com.example.campsitereservationapp.campsite.HostDashboardScreen
 import com.example.campsitereservationapp.campsite.MyCampsitesScreen
 import com.example.campsitereservationapp.campsite.CampsiteDetailsScreen
 import com.example.campsitereservationapp.model.User
+import com.example.campsitereservationapp.lottery.LotteriesScreen
 import com.example.campsitereservationapp.profile.EditProfileScreen
 import com.example.campsitereservationapp.profile.ProfileScreen
 import com.example.campsitereservationapp.reservation.MyReservationsScreen
@@ -47,7 +48,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun MainScreen(
     user: User,
-    onSaveProfile: suspend (User) -> Unit
+    onSaveProfile: suspend (User) -> Unit,
+    openLotteryId: String? = null,
+    onLotteryOpened: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf(false) }
@@ -57,7 +60,7 @@ fun MainScreen(
     var registering by rememberSaveable { mutableStateOf(false) }
     var showingCampsites by rememberSaveable { mutableStateOf(false) }
     var campsiteId by rememberSaveable { mutableStateOf<String?>(null) }
-    var entrantCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from Discover
+    var entrantCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from Discover or Lotteries
     var searchText by rememberSaveable { mutableStateOf("") }  // Keep the search text when opening and closing campsite details
     var reservationId by rememberSaveable { mutableStateOf<String?>(null) }
     var reserveLotteryId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -67,6 +70,12 @@ fun MainScreen(
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    LaunchedEffect(openLotteryId) {
+        if (!openLotteryId.isNullOrBlank()) {
+            reserveLotteryId = openLotteryId
+            onLotteryOpened()
+        }
+    }
     LaunchedEffect(registration.createdId) {
         if (registration.createdId != null) {
             registering = false
@@ -200,11 +209,12 @@ fun MainScreen(
                         selectedTab = 2 // Show the new reservation
                     }
                 )
-                // Open campsite selected from discover
+                // Open campsite selected from Discover or Lotteries.
                 entrantCampsiteId != null -> CampsiteDetailsScreen(
                     campsiteId = entrantCampsiteId!!,
+                    entrantId = user.id,
                     onBack = { entrantCampsiteId = null },
-                    fromDiscover = true
+                    fromDiscover = selectedTab == 0
                 )
 
                 selectedTab == 0 -> HomeScreen(
@@ -214,9 +224,9 @@ fun MainScreen(
                     searchText = searchText,  // Remember the previous search
                     onSearchTextChange = { searchText = it }
                 )
-                selectedTab == 1 -> EmptyTab(
-                    "Lotteries",
-                    "Your campsite draws will appear here."
+                selectedTab == 1 -> LotteriesScreen(
+                    user = user,
+                    onCampsiteClick = { entrantCampsiteId = it }
                 )
                 selectedTab == 2 -> MyReservationsScreen(
                     onReservationClick = { reservationId = it },
