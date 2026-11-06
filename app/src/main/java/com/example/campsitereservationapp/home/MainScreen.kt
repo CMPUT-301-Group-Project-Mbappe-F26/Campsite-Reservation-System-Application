@@ -26,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.campsitereservationapp.admin.AdminCampsitesScreen
+import com.example.campsitereservationapp.admin.AdminDashboardScreen
 import com.example.campsitereservationapp.campsite.CreateCampsiteScreen
 import com.example.campsitereservationapp.campsite.CampsiteRegistrationViewModel
 import com.example.campsitereservationapp.campsite.HostDashboardScreen
@@ -42,7 +44,7 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import kotlinx.coroutines.launch
 
-// Handles the main tabs and host screen navigation.
+// Handles the main tabs, host screen and admin screen navigation.
 @Composable
 fun MainScreen(
     user: User,
@@ -58,9 +60,13 @@ fun MainScreen(
     var registering by rememberSaveable { mutableStateOf(false) }
     var showingCampsites by rememberSaveable { mutableStateOf(false) }
     var campsiteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var entrantCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from Discover or Lotteries
+    var searchText by rememberSaveable { mutableStateOf("") }  // Keep the search text when opening and closing campsite details
     var reservationId by rememberSaveable { mutableStateOf<String?>(null) }
     var reserveLotteryId by rememberSaveable { mutableStateOf<String?>(null) }
-    var entrantCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var adminMode by rememberSaveable { mutableStateOf(false) }
+    var showingAdminCampsites by rememberSaveable { mutableStateOf(false) }
+    var adminCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from the admin list
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -89,12 +95,20 @@ fun MainScreen(
     }
     BackHandler(enabled = reservationId != null) { reservationId = null }
     BackHandler(enabled = reserveLotteryId != null) { reserveLotteryId = null }
-    BackHandler(enabled = entrantCampsiteId != null) { entrantCampsiteId = null }
+    BackHandler(enabled = entrantCampsiteId != null) { entrantCampsiteId = null }  // Return to Discover after leaving campsite details
+    BackHandler(enabled = adminMode) {
+        when {
+            adminCampsiteId != null -> adminCampsiteId = null
+            showingAdminCampsites -> showingAdminCampsites = false
+            else -> adminMode = false
+        }
+    }
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         containerColor = PinedrawColors.Background,
         bottomBar = {
-            if (!editing && !hostMode && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
+            // Hide bottom navigation when some other screen is open
+            if (!editing && !hostMode && !adminMode && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
                 PinedrawNavBar(
                     tabs = listOf("Discover", "Lotteries", "Extra", "Profile"),
                     selectedTab = selectedTab,
@@ -120,6 +134,19 @@ fun MainScreen(
                         }
                     },
                     onCreate = registration::create
+                )
+                adminMode && adminCampsiteId != null -> CampsiteDetailsScreen(
+                    campsiteId = adminCampsiteId!!,
+                    onBack = { adminCampsiteId = null },
+                    asAdmin = true
+                )
+                adminMode && showingAdminCampsites -> AdminCampsitesScreen(
+                    onBack = { showingAdminCampsites = false },
+                    onCampsiteClick = { adminCampsiteId = it }
+                )
+                adminMode -> AdminDashboardScreen(
+                    onBack = { adminMode = false },
+                    onCampsitesClick = { showingAdminCampsites = true }
                 )
                 hostMode && campsiteId != null -> CampsiteDetailsScreen(
                     campsiteId = campsiteId!!,
@@ -182,16 +209,20 @@ fun MainScreen(
                         selectedTab = 2 // Show the new reservation
                     }
                 )
-
+                // Open campsite selected from Discover or Lotteries.
                 entrantCampsiteId != null -> CampsiteDetailsScreen(
                     campsiteId = entrantCampsiteId!!,
                     entrantId = user.id,
-                    onBack = { entrantCampsiteId = null }
+                    onBack = { entrantCampsiteId = null },
+                    fromDiscover = selectedTab == 0
                 )
 
                 selectedTab == 0 -> HomeScreen(
                     user = user,
-                    onProfileClick = { selectedTab = 3 } // Open Profile tab
+                    onProfileClick = { selectedTab = 3 }, // Open Profile tab
+                    onCampsiteClick = { entrantCampsiteId = it },
+                    searchText = searchText,  // Remember the previous search
+                    onSearchTextChange = { searchText = it }
                 )
                 selectedTab == 1 -> LotteriesScreen(
                     user = user,
@@ -204,7 +235,8 @@ fun MainScreen(
                 else -> ProfileScreen(
                     user = user,
                     onEditClick = { editing = true },
-                    onHostClick = { hostMode = true }
+                    onHostClick = { hostMode = true },
+                    onAdminClick = { if (user.isAdmin) adminMode = true }
                 )
             }
 

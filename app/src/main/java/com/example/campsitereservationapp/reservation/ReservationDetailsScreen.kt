@@ -26,7 +26,22 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 
-// Loads and shows a reservation belonging to the current entrant.
+/*
+ * Details of one of the entrant's reservations, opened from My Reservations (US 01.06.01).
+ *
+ * [ReservationDetailsScreen] loads the reservation and its campsite from Firebase and only
+ * shows reservations belonging to the signed-in entrant. [ReservationDetailsContent] only
+ * draws them, so intent tests can check the screen without Firebase.
+ *
+ * Outstanding issues: there is no Cancel Reservation button yet (US 01.07.01).
+ */
+
+/**
+ * Loads and shows a reservation belonging to the signed-in entrant.
+ *
+ * @param reservationId Firestore document ID of the reservation.
+ * @param onBack Returns to My Reservations.
+ */
 @Composable
 fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit) {
     val reservationService = remember { ReservationService() }
@@ -85,28 +100,36 @@ fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit) {
                 Text(error, color = PinedrawColors.Coral)
                 TextButton(onClick = { refresh++ }) { Text("Try again") }
             }
-            else -> reservation?.let { booking ->
-                val site = campsite
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    CampsitePhoto(site?.imageUrls?.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Text(booking.campsiteName.ifBlank { site?.name ?: "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
-                        Surface(color = PinedrawColors.Lime.copy(alpha = 0.15f), shape = MaterialTheme.shapes.large) {
-                            Text(booking.status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                color = PinedrawColors.Lime, fontWeight = FontWeight.Bold)
-                        }
-                        ReservationCard {
-                            ReservationRow("Check-in", formatReservationDate(booking.checkInDate))
-                            ReservationRow("Check-out", formatReservationDate(booking.checkOutDate))
-                            ReservationRow("Location", site?.location?.ifBlank { null } ?: "Not available")
-                        }
-                        if (site != null) ReservationCard {
-                            Text("Rules for entrants", style = MaterialTheme.typography.titleLarge)
-                            Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
-                            ReservationRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
-                        }
-                    }
-                }
+            else -> reservation?.let { ReservationDetailsContent(it, campsite) }
+        }
+    }
+}
+
+/**
+ * Draws a loaded reservation: campsite, status, dates, location and the campsite's rules.
+ *
+ * @param booking The reservation to show.
+ * @param site The reserved campsite, or null if it could not be loaded; its location and rules are then skipped.
+ */
+@Composable
+fun ReservationDetailsContent(booking: Reservation, site: Campsite?) {
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        CampsitePhoto(site?.imageUrls?.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Text(booking.campsiteName.ifBlank { site?.name ?: "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
+            Surface(color = PinedrawColors.Lime.copy(alpha = 0.15f), shape = MaterialTheme.shapes.large) {
+                Text(booking.status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = PinedrawColors.Lime, fontWeight = FontWeight.Bold)
+            }
+            ReservationCard {
+                ReservationRow("Check-in", formatReservationDate(booking.checkInDate))
+                ReservationRow("Check-out", formatReservationDate(booking.checkOutDate))
+                ReservationRow("Location", site?.location?.ifBlank { null } ?: "Not available")
+            }
+            if (site != null) ReservationCard {
+                Text("Rules for entrants", style = MaterialTheme.typography.titleLarge)
+                Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
+                ReservationRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
             }
         }
     }

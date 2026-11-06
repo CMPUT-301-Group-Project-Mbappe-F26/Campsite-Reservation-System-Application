@@ -24,7 +24,23 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 
-// Loads and displays the signed-in entrant's active reservations.
+/*
+ * My Reservations tab: the signed-in entrant's active reservations (US 01.06.01), plus a
+ * card for each lottery spot they won but have not used yet, which opens ReserveScreen.
+ *
+ * [MyReservationsScreen] loads the data from Firebase. [MyReservationsContent] only draws
+ * it, so intent tests can check the screen without Firebase.
+ *
+ * Outstanding issues: past reservations (US 01.06.02) are not shown yet, and the list only
+ * reloads when the tab is reopened or after an error.
+ */
+
+/**
+ * Loads and displays the signed-in entrant's active reservations and unused lottery wins.
+ *
+ * @param onReservationClick Opens the details of the tapped reservation.
+ * @param onReserveClick Opens the reserve screen for the tapped lottery win.
+ */
 @Composable
 fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (String) -> Unit) {
     val service = remember { ReservationService() }
@@ -64,6 +80,32 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
         }
     }
 
+    MyReservationsContent(wins, reservations, loading, error, onRetry = { refresh++ }, onReservationClick, onReserveClick)
+}
+
+/**
+ * Draws the My Reservations tab from already loaded data.
+ *
+ * Shows "No active reservations" when [reservations] is empty and nothing is loading.
+ *
+ * @param wins Unused lottery wins, as lottery ID and campsite name.
+ * @param reservations Active reservations, soonest first.
+ * @param loading True while the reservations are loading.
+ * @param error Message to show when loading failed, or blank.
+ * @param onRetry Loads the reservations again after an error.
+ * @param onReservationClick Opens the details of the tapped reservation.
+ * @param onReserveClick Opens the reserve screen for the tapped lottery win.
+ */
+@Composable
+fun MyReservationsContent(
+    wins: List<Pair<String, String>>,
+    reservations: List<Reservation>,
+    loading: Boolean,
+    error: String,
+    onRetry: () -> Unit,
+    onReservationClick: (String) -> Unit,
+    onReserveClick: (String) -> Unit
+) {
     Column(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
@@ -101,7 +143,7 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
             }
             error.isNotEmpty() -> Column(Modifier.padding(vertical = 24.dp)) {
                 Text(error, color = PinedrawColors.Coral)
-                TextButton(onClick = { refresh++ }) { Text("Try again") }
+                TextButton(onClick = onRetry) { Text("Try again") }
             }
             reservations.isEmpty() -> Card(
                 modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,

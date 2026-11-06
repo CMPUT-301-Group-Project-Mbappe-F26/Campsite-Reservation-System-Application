@@ -48,19 +48,30 @@ import java.util.Locale
 /**
  * Loads a campsite and displays its details, with extra options for its owner.
  *
- * Hides other users' unpublished campsites. Create Lottery is shown to the owner and
+ * Hides other users' unpublished campsites, except from admins. Create Lottery is shown to the owner and
  * opens [LotteryCreation] for the loaded campsite; closing that form returns here.
+ * The owner also sees the current lottery's waiting list ([LotteryEntrantsSection]).
  * Loading failures display an error with a retry action.
  *
  * @param campsiteId Firestore document ID of the campsite to load.
- * @param entrantId Current entrant when opened from the lottery list; null in host mode.
+ * @param entrantId Current entrant when opened from Discover or Lotteries; null in host or admin mode.
  * @param onBack Returns to the previous screen.
+ * @param fromDiscover True when an entrant opened the campsite from Discover.
+ * @param asAdmin True when an admin opened the campsite from the Admin Dashboard.
  */
 // Loads and shows a campsite, with extra options when the signed-in user owns it.
 @Composable
-fun CampsiteDetailsScreen(campsiteId: String, entrantId: String? = null, onBack: () -> Unit) {
+fun CampsiteDetailsScreen(
+    campsiteId: String,
+    onBack: () -> Unit,
+    fromDiscover: Boolean = false,
+    asAdmin: Boolean = false,
+    entrantId: String? = null
+) {
     val service = remember { CampsiteService() }
     val lotteryService = remember { LotteryService() }
+    var openLottery by remember(campsiteId) { mutableStateOf<Lottery?>(null) }
+    var lotteryStatus by remember(campsiteId) { mutableStateOf("Checking lottery...") }
     val ownerId = rememberCampsiteOwnerId()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -82,7 +93,7 @@ fun CampsiteDetailsScreen(campsiteId: String, entrantId: String? = null, onBack:
             check(ownerId != null) { "Not signed in" }
             val result = withTimeoutOrNull(20000) { service.getCampsite(campsiteId) }
             if (result == null) error = "This campsite is unavailable or could not be loaded. Please try again."
-            else if (!result.published && !result.isOwnedBy(ownerId))
+            else if (!canViewCampsite(result, ownerId, asAdmin))
                 error = "This campsite is unavailable or could not be loaded. Please try again."
             else {
                 campsite = result
@@ -97,6 +108,21 @@ fun CampsiteDetailsScreen(campsiteId: String, entrantId: String? = null, onBack:
             error = "Could not load this campsite. Please try again."
         } finally {
             loading = false
+        }
+    }
+    // If selected campsite has an open lottery
+    LaunchedEffect(campsiteId) {
+        try {
+            openLottery = service.getOpenLottery(campsiteId)
+            // Update status
+            if (openLottery != null) {
+                lotteryStatus = "Registration open"
+            } else {
+                lotteryStatus = "No open lottery"
+            }
+        } catch (e: Exception) {
+            coroutineContext.ensureActive()
+            lotteryStatus = "Could not load lottery information"
         }
     }
 
@@ -114,7 +140,7 @@ fun CampsiteDetailsScreen(campsiteId: String, entrantId: String? = null, onBack:
         TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text(if (entrantId == null) "My Campsites" else "Lotteries")
+            Text(if (entrantId != null && !fromDiscover && !asAdmin) "Lotteries" else getCampsiteBackLabel(fromDiscover, asAdmin))
         }
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -135,7 +161,7 @@ fun CampsiteDetailsScreen(campsiteId: String, entrantId: String? = null, onBack:
                             onJoin = { joining = true },
                             onLeave = { leaving = true }
                         )
-                        if (site.isOwnedBy(ownerId)) Button(
+                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) Button(
                             onClick = { creatingLottery = true },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                             shape = CircleShape,
@@ -161,7 +187,56 @@ fun CampsiteDetailsScreen(campsiteId: String, entrantId: String? = null, onBack:
                             DetailRow("Coordinates", String.format(Locale.CANADA, "%.5f, %.5f", site.latitude, site.longitude))
                             DetailRow("Max occupancy", site.maxOccupancy?.let { "$it guests" } ?: "No maximum")
                             DetailRow("Price", String.format(Locale.CANADA, "$%.2f CAD / night", site.pricePerNight))
+
+                            if (site.averageRating != null) {  // Display campsite rating if available
+                                val rating = site.averageRating
+                                val fullStars = rating.toInt().coerceIn(0, 5)
+                                val stars = "\u2605".repeat(fullStars) + "\u2606".repeat(5 - fullStars)
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = stars,
+                                        color = Color(0xFFFFC107)
+                                    )
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    // Rating
+                                    Text(text = "$rating / 5")
+                                }
+                            } else {
+                                Text(  // No rating
+                                    text = "No ratings yet",
+                                    color = PinedrawColors.TextSecondary
+                                )
+                            }
                         }
+
+                        Text(  // Display lottery information
+                            text = "Lottery Information",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+
+                        DetailCard {  // Show whether registration is open
+                            Text(
+                                text = lotteryStatus,
+                                color = PinedrawColors.TextSecondary
+                            )
+
+                            if (openLottery != null) {  // Show registration dates if a lottery is open
+                                DetailRow(
+                                    "Registration starts",
+                                    openLottery!!.registrationStartDate
+                                )
+
+                                DetailRow(
+                                    "Registration ends",
+                                    openLottery!!.registrationEndDate
+                                )
+                            }
+                        }
+                        // Only the owner sees who has joined the waiting list
+                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) LotteryEntrantsSection(site.id)
+
                         DetailCard {
                             Text("Description", style = MaterialTheme.typography.titleLarge)
                             Text(site.description.ifBlank { "No description provided." }, color = PinedrawColors.TextSecondary)
@@ -191,7 +266,7 @@ fun CampsiteDetailsScreen(campsiteId: String, entrantId: String? = null, onBack:
                             Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
                             DetailRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
                             if (site.requireRulesAcceptance) Text("Entrants must accept the rules.", color = PinedrawColors.TextMuted)
-                            if (site.isOwnedBy(ownerId)) OwnerPolicyEditor(
+                            if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) OwnerPolicyEditor(
                                 campsiteId = site.id,
                                 rules = site.rules,
                                 onSaved = { campsite = site.copy(rules = it) }
@@ -294,10 +369,23 @@ private fun Throwable.lotteryMessage(fallback: String): String {
     return current.message?.takeIf { it.isNotBlank() } ?: fallback
 }
 
-// Lets the owner edit the campsite policy, saving only after they confirm.
+/**
+ * Lets the owner edit the campsite policy entrants must accept (US 02.11.01).
+ *
+ * Save asks "Are you sure?" before saving, and Cancel discards the draft.
+ *
+ * @param campsiteId Firestore document ID of the campsite.
+ * @param rules The policy currently saved.
+ * @param onSaved Called with the trimmed policy after it is saved.
+ * @param savePolicy Saves the policy; replaced in intent tests so no Firebase call is made.
+ */
 @Composable
-private fun OwnerPolicyEditor(campsiteId: String, rules: String, onSaved: (String) -> Unit) {
-    val service = remember { CampsiteService() }
+internal fun OwnerPolicyEditor(
+    campsiteId: String,
+    rules: String,
+    onSaved: (String) -> Unit,
+    savePolicy: suspend (String) -> Unit = { CampsiteService().updateCampsitePolicy(campsiteId, it) }
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var editing by rememberSaveable(campsiteId) { mutableStateOf(false) }
@@ -346,7 +434,7 @@ private fun OwnerPolicyEditor(campsiteId: String, rules: String, onSaved: (Strin
                 scope.launch {
                     try {
                         val saved = withTimeoutOrNull(20000) {
-                            service.updateCampsitePolicy(campsiteId, draft)
+                            savePolicy(draft)
                             true
                         }
                         if (saved == null) error = "Could not save the policy. Please try again."
@@ -456,4 +544,54 @@ internal fun CampsitePhoto(url: String?, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+// Testing purposes functions
+/**
+ * Checks if a user can view a campsite.
+ *
+ * Published campsites can be viewed by anyone, while unpublished
+ * campsites can only be viewed by their owner or an admin.
+ *
+ * @param campsite The campsite being checked.
+ * @param userId ID of the current user.
+ * @param asAdmin True if the user is viewing as an admin.
+ * @return True if the user can view the campsite.
+ */
+fun canViewCampsite(campsite: Campsite, userId: String?, asAdmin: Boolean = false): Boolean {
+    return campsite.published || campsite.isOwnedBy(userId) || asAdmin
+}
+/**
+ * Checks if the owner controls should be displayed.
+ *
+ * Owner controls are only shown when the owner opens the
+ * campsite outside of Discover.
+ *
+ * @param campsite The campsite being viewed.
+ * @param userId ID of the current user.
+ * @param fromDiscover True if the user opened the campsite from Discover.
+ * @return True if the owner controls should be shown.
+ */
+fun canShowOwnerControls(
+    campsite: Campsite,
+    userId: String?,
+    fromDiscover: Boolean
+): Boolean {
+    return !fromDiscover && campsite.isOwnedBy(userId)
+}
+/**
+ * Gets the correct back button label based on where the user came from.
+ *
+ * @param fromDiscover True if the campsite was opened from Discover.
+ * @param asAdmin True if the campsite was opened from the Admin Dashboard.
+ * @return "Discover", "All Campsites" or "My Campsites".
+ */
+fun getCampsiteBackLabel(fromDiscover: Boolean, asAdmin: Boolean = false): String {
+    if (fromDiscover) {
+        return "Discover"
+    }
+    if (asAdmin) {
+        return "All Campsites"
+    }
+
+    return "My Campsites"
 }
