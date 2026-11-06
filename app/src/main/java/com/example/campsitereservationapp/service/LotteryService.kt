@@ -15,7 +15,8 @@ import java.util.TimeZone
  *
  * The model is stored at `lotteries/{id}`. Ownership and current campsite capacity
  * are checked in the creation transaction. [drawLottery] saves initial winners to
- * pending after registration closes. This service does not schedule automatic draws
+ * pending after registration closes. [getCurrentLottery] finds the lottery a campsite
+ * is running so its owner can see the waiting list. This service does not schedule automatic draws
  * or manage registration and reservation actions.
  */
 class LotteryService {
@@ -127,7 +128,40 @@ class LotteryService {
             drawn
         }.await()
     }
+
+    /**
+     * Loads the lottery a campsite is currently running, if any.
+     *
+     * A lottery counts as current until its draw is completed, including before
+     * registration opens and after it closes. Used to show the owner who has joined.
+     *
+     * @param campsiteId Firestore document ID of the campsite.
+     * @return The current lottery with its document ID, or null if the campsite has none.
+     * @see currentLottery
+     */
+    suspend fun getCurrentLottery(campsiteId: String): Lottery? {
+        require(campsiteId.isNotBlank() && '/' !in campsiteId) { "Provide a valid campsite document ID." }
+        val result = db.collection("lotteries")
+            .whereEqualTo("campsiteId", campsiteId)
+            .get().await()
+        return currentLottery(result.documents.mapNotNull { doc ->
+            doc.toObject(Lottery::class.java)?.copy(id = doc.id)
+        })
+    }
 }
+
+/**
+ * Picks the lottery a campsite is currently running from all of its lotteries.
+ *
+ * Lotteries whose draw is completed are finished, as are those closed when an admin
+ * removed the campsite. If more than one is still running, the one whose registration
+ * starts first is returned.
+ *
+ * @param lotteries Every lottery stored for one campsite.
+ * @return The current lottery, or null when every lottery is finished.
+ */
+internal fun currentLottery(lotteries: List<Lottery>): Lottery? =
+    lotteries.filter { !it.drawCompleted }.minByOrNull { it.registrationStartDate }
 
 /**
  * Prepares the initial draw from a stored lottery without performing database operations.
