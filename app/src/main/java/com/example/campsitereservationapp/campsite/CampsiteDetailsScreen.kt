@@ -28,7 +28,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.model.Lottery
+import com.example.campsitereservationapp.model.formatReservationDate
+import com.example.campsitereservationapp.lottery.JoinWaitingListDialog
+import com.example.campsitereservationapp.lottery.LeaveWaitingListDialog
 import com.example.campsitereservationapp.service.CampsiteService
+import com.example.campsitereservationapp.service.LotteryService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
@@ -48,30 +53,45 @@ import java.util.Locale
  * Loading failures display an error with a retry action.
  *
  * @param campsiteId Firestore document ID of the campsite to load.
- * @param onBack Returns to the owner's campsite list.
+ * @param entrantId Current entrant when opened from the lottery list; null in host mode.
+ * @param onBack Returns to the previous screen.
  */
 // Loads and shows a campsite, with extra options when the signed-in user owns it.
 @Composable
-fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
+fun CampsiteDetailsScreen(campsiteId: String, entrantId: String? = null, onBack: () -> Unit) {
     val service = remember { CampsiteService() }
+    val lotteryService = remember { LotteryService() }
     val ownerId = rememberCampsiteOwnerId()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var campsite by remember(campsiteId, ownerId) { mutableStateOf<Campsite?>(null) }
+    var lottery by remember(campsiteId, entrantId) { mutableStateOf<Lottery?>(null) }
     var loading by remember(campsiteId, ownerId) { mutableStateOf(true) }
     var error by remember(campsiteId, ownerId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
     var creatingLottery by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
+    var joining by rememberSaveable(campsiteId) { mutableStateOf(false) }
+    var leaving by rememberSaveable(campsiteId) { mutableStateOf(false) }
 
-    LaunchedEffect(campsiteId, ownerId, refresh) {
+    LaunchedEffect(campsiteId, ownerId, entrantId, refresh) {
         loading = true
         error = ""
         campsite = null
+        lottery = null
         try {
             check(ownerId != null) { "Not signed in" }
             val result = withTimeoutOrNull(20000) { service.getCampsite(campsiteId) }
             if (result == null) error = "This campsite is unavailable or could not be loaded. Please try again."
             else if (!result.published && !result.isOwnedBy(ownerId))
                 error = "This campsite is unavailable or could not be loaded. Please try again."
-            else campsite = result
+            else {
+                campsite = result
+                if (entrantId != null && result.ownerId != entrantId) {
+                    lottery = withTimeoutOrNull(20000) {
+                        lotteryService.getOpenLotteryForCampsite(campsiteId)
+                    }
+                }
+            }
         } catch (_: Exception) {
             coroutineContext.ensureActive() // Stop normally when leaving the screen.
             error = "Could not load this campsite. Please try again."
@@ -94,7 +114,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
         TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("My Campsites")
+            Text(if (entrantId == null) "My Campsites" else "Lotteries")
         }
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -109,6 +129,12 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
                     CampsitePhoto(site.imageUrls.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         Text(site.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
+                        if (entrantId != null && lottery != null) LotteryDetailsActions(
+                            lottery = lottery!!,
+                            entrantId = entrantId,
+                            onJoin = { joining = true },
+                            onLeave = { leaving = true }
+                        )
                         if (site.isOwnedBy(ownerId)) Button(
                             onClick = { creatingLottery = true },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
@@ -176,6 +202,96 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit) {
             }
         }
     }
+
+    if (joining && campsite != null && lottery != null) JoinWaitingListDialog(
+        lottery = lottery!!,
+        campsite = campsite!!,
+        onCancel = { joining = false },
+        onConfirm = { groupSize, setSaving, setDialogError ->
+            scope.launch {
+                setSaving(true)
+                setDialogError("")
+                try {
+                    lottery = lotteryService.joinWaitingList(lottery!!.id, groupSize)
+                    joining = false
+                    Toast.makeText(context, "You're on the waiting list", Toast.LENGTH_SHORT).show()
+                } catch (exception: Exception) {
+                    coroutineContext.ensureActive()
+                    setDialogError(exception.lotteryMessage("Could not join the waiting list."))
+                } finally {
+                    setSaving(false)
+                }
+            }
+        }
+    )
+
+    if (leaving && campsite != null && lottery != null) LeaveWaitingListDialog(
+        campsiteName = campsite!!.name.ifBlank { "campsite" },
+        onCancel = { leaving = false },
+        onConfirm = { setSaving, setDialogError ->
+            scope.launch {
+                setSaving(true)
+                setDialogError("")
+                try {
+                    lottery = lotteryService.leaveWaitingList(lottery!!.id)
+                    leaving = false
+                    Toast.makeText(context, "Left the waiting list", Toast.LENGTH_SHORT).show()
+                } catch (exception: Exception) {
+                    coroutineContext.ensureActive()
+                    setDialogError(exception.lotteryMessage("Could not leave the waiting list."))
+                } finally {
+                    setSaving(false)
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun LotteryDetailsActions(
+    lottery: Lottery,
+    entrantId: String,
+    onJoin: () -> Unit,
+    onLeave: () -> Unit
+) {
+    val entered = entrantId in lottery.registered
+    DetailCard {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Lottery", style = MaterialTheme.typography.titleLarge)
+            Text(if (entered) "Entered" else "Open", color = PinedrawColors.Lime)
+        }
+        DetailRow(
+            "Stay",
+            "${formatReservationDate(lottery.stayStartDate)} – ${formatReservationDate(lottery.stayEndDate)}"
+        )
+        if (entered) {
+            Text(
+                lottery.registeredGroupSizes[entrantId]?.let { "Party of $it" } ?: "You're in the draw",
+                color = PinedrawColors.TextSecondary
+            )
+            OutlinedButton(onClick = onLeave, modifier = Modifier.fillMaxWidth(), shape = CircleShape) {
+                Text("Leave waiting list")
+            }
+        } else {
+            Button(
+                onClick = onJoin,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PinedrawColors.Lime,
+                    contentColor = PinedrawColors.Ink
+                )
+            ) {
+                Text("Join lottery", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+private fun Throwable.lotteryMessage(fallback: String): String {
+    var current: Throwable = this
+    while (current.cause != null && current.cause !== current) current = current.cause!!
+    return current.message?.takeIf { it.isNotBlank() } ?: fallback
 }
 
 // Lets the owner edit the campsite policy, saving only after they confirm.

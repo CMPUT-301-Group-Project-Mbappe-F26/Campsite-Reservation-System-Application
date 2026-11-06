@@ -58,6 +58,7 @@ fun MainScreen(
     var campsiteId by rememberSaveable { mutableStateOf<String?>(null) }
     var reservationId by rememberSaveable { mutableStateOf<String?>(null) }
     var reserveLotteryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var entrantCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -80,11 +81,12 @@ fun MainScreen(
     }
     BackHandler(enabled = reservationId != null) { reservationId = null }
     BackHandler(enabled = reserveLotteryId != null) { reserveLotteryId = null }
+    BackHandler(enabled = entrantCampsiteId != null) { entrantCampsiteId = null }
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         containerColor = PinedrawColors.Background,
         bottomBar = {
-            if (!editing && !hostMode && reservationId == null && reserveLotteryId == null) {
+            if (!editing && !hostMode && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
                 PinedrawNavBar(
                     tabs = listOf("Discover", "Lotteries", "Extra", "Profile"),
                     selectedTab = selectedTab,
@@ -173,11 +175,20 @@ fun MainScreen(
                     }
                 )
 
+                entrantCampsiteId != null -> CampsiteDetailsScreen(
+                    campsiteId = entrantCampsiteId!!,
+                    entrantId = user.id,
+                    onBack = { entrantCampsiteId = null }
+                )
+
                 selectedTab == 0 -> HomeScreen(
                     user = user,
                     onProfileClick = { selectedTab = 3 } // Open Profile tab
                 )
-                selectedTab == 1 -> LotteriesScreen(user = user)
+                selectedTab == 1 -> LotteriesScreen(
+                    user = user,
+                    onCampsiteClick = { entrantCampsiteId = it }
+                )
                 selectedTab == 2 -> MyReservationsScreen(
                     onReservationClick = { reservationId = it },
                     onReserveClick = { reserveLotteryId = it }

@@ -101,6 +101,25 @@ class LotteryService {
         }.sortedWith(compareBy({ it.lottery.registrationEndDate }, { it.campsite.name }))
     }
 
+    /** Returns the open lottery shown on a campsite details screen. */
+    suspend fun getOpenLotteryForCampsite(
+        campsiteId: String,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Lottery? {
+        require(campsiteId.isNotBlank() && '/' !in campsiteId) { "Provide a valid campsite document ID." }
+        val today = lotteryAlbertaDate(nowMillis)
+        return db.collection("lotteries")
+            .whereEqualTo("campsiteId", campsiteId)
+            .get().await().documents
+            .mapNotNull { snapshot -> snapshot.toObject(Lottery::class.java)?.copy(id = snapshot.id) }
+            .filter { lottery ->
+                !lottery.drawCompleted &&
+                    today >= lottery.registrationStartDate &&
+                    today <= lottery.registrationEndDate
+            }
+            .minByOrNull { it.registrationEndDate }
+    }
+
     /**
      * Atomically registers the signed-in entrant for a lottery.
      *
@@ -141,6 +160,28 @@ class LotteryService {
             check(joinError == null) { joinError.orEmpty() }
             val registered = lottery.registered + uid
             val groupSizes = lottery.registeredGroupSizes + (uid to groupSize)
+            transaction.update(document, mapOf(
+                "registered" to registered,
+                "registeredGroupSizes" to groupSizes
+            ))
+            lottery.copy(registered = registered, registeredGroupSizes = groupSizes)
+        }.await()
+    }
+
+    /** Removes the signed-in entrant while registration is still open. */
+    suspend fun leaveWaitingList(lotteryId: String): Lottery {
+        require(lotteryId.isNotBlank() && '/' !in lotteryId) { "Provide a valid lottery document ID." }
+        val uid = auth.currentUser?.uid ?: error("Please sign in before leaving a lottery.")
+        val document = db.collection("lotteries").document(lotteryId)
+        return db.runTransaction { transaction ->
+            val snapshot = transaction.get(document)
+            val lottery = snapshot.toObject(Lottery::class.java)?.copy(id = snapshot.id)
+                ?: error("This lottery is no longer available.")
+            check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+            val leaveError = waitingListLeaveError(lottery, uid, System.currentTimeMillis())
+            check(leaveError == null) { leaveError.orEmpty() }
+            val registered = lottery.registered.filterNot { it == uid }
+            val groupSizes = lottery.registeredGroupSizes - uid
             transaction.update(document, mapOf(
                 "registered" to registered,
                 "registeredGroupSizes" to groupSizes
@@ -232,6 +273,23 @@ internal fun waitingListJoinError(
         lottery.drawCompleted -> "This lottery has already been drawn."
         today < lottery.registrationStartDate -> "Registration for this lottery has not opened yet."
         today > lottery.registrationEndDate -> "Registration for this lottery has closed."
+        else -> null
+    }
+}
+
+/** Returns a reason the entrant cannot leave, or null while leaving is allowed. */
+internal fun waitingListLeaveError(
+    lottery: Lottery,
+    entrantId: String,
+    nowMillis: Long
+): String? {
+    val today = lotteryAlbertaDate(nowMillis)
+    return when {
+        entrantId.isBlank() -> "Please sign in before leaving a lottery."
+        entrantId !in lottery.registered -> "You are not on this lottery's waiting list."
+        lottery.drawCompleted || today > lottery.registrationEndDate ->
+            "Registration has closed. You can no longer leave the waiting list."
+        today < lottery.registrationStartDate -> "Registration has not opened yet."
         else -> null
     }
 }
