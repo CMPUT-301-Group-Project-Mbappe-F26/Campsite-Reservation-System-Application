@@ -41,21 +41,34 @@ The application currently has the following functionality:
 - Remove campsites
 - Close active lotteries and clear waiting lists
 
+### Lottery Notifications
+- Notify users when lottery results are available
+- Inform users whether the lottery is won or lost
+- Show winners the deadline for making a reservation
+- Allow winners to open their lottery from a notification
+
+### User Profile
+- View and edit personal information
+- Update your full name, email, and phone number
+- Add or change city (optional)
+- Save profile changes
+
 ### Testing
 All tests are present in directories:
 app/src/androidTest/java/com/example/campsitereservationapp
-and
-app/src/test/java/com/example/campsitereservationapp
-To run tests, right-click the relevant test class in Android Studio and select Run.
+ and
+ app/src/test/java/com/example/campsitereservationapp
+- To run tests, right-click the relevant test class in Android Studio and select Run.
 
 ### Project Documentation
 Additional project documentation is available through the GitHub wiki.
-- Product backlog and user stories
 - UI mockups
 - Storyboard sequences
 - CRC cards
 - Team meeting summaries
-- Addressing PP2 TA feedback 
+- Addressing PP2 TA feedback
+- UML Class Diagrams
+- Sprint, Work Planning and Work Distribution
   
 ### Group members:
 - Ritesh Kumar Jena, CCID: rkjena
