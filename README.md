@@ -1,5 +1,5 @@
 # Campsite Reservation System
-## CMPUT 301 - Group Mbappe.
+## CMPUT 301 - Group Name: Mbappe
 
 This is a CMPUT 301 group project at the University of Alberta.
 
@@ -32,6 +32,14 @@ The application currently has the following functionality:
 - Create lotteries for registered campsites
 - Set registration periods and available booking dates
 - Display lottery availability
+
+### Admin Features
+- Access the admin dashboard through the profile screen
+- View all registered campsites
+- View campsite names, locations, owners, and publication status
+- Open campsite details
+- Remove campsites
+- Close active lotteries and clear waiting lists
 
 ### Testing
 All tests are present in directories:
