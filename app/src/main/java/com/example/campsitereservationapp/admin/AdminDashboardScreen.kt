@@ -25,7 +25,12 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
  * and log browsing (US 03.02 to 03.12) still need their own buttons here.
  */
 
-// Shows the admin tools the signed-in admin can open.
+/**
+ * Shows the admin tools the signed-in admin can open.
+ *
+ * @param onBack Goes back to the previous screen.
+ * @param onCampsitesClick Opens the campsite management screen.
+ */
 @Composable
 fun AdminDashboardScreen(
     onBack: () -> Unit,

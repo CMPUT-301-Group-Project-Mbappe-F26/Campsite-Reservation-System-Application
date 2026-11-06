@@ -25,7 +25,13 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
-// Loads and displays the signed-in owner's campsites.
+/**
+ * Loads and displays the signed-in owner's campsites.
+ *
+ * @param onBack Goes back to the previous screen.
+ * @param onCampsiteClick Opens the selected campsite.
+ * @param onRegisterClick Opens the campsite registration screen.
+ */
 @Composable
 fun MyCampsitesScreen(
     onBack: () -> Unit,

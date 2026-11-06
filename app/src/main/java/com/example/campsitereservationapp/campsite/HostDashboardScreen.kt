@@ -17,7 +17,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 
-// Shows the host registration and campsite list buttons.
+/**
+ * Shows the host registration and campsite list buttons.
+ *
+ * @param onBack Goes back to the profile.
+ * @param onRegisterClick Opens campsite registration.
+ * @param onMyCampsitesClick Opens the user's campsites.
+ */
 @Composable
 fun HostDashboardScreen(
     onBack: () -> Unit,

@@ -29,6 +29,11 @@ class CampsiteRegistrationViewModel : ViewModel() {
         registrationId = service.newCampsiteId()
     }
 
+    /**
+     * Checks the form and saves the new campsite.
+     *
+     * @param form The campsite information entered by the user.
+     */
     // Validates and saves the campsite, then reports the result.
     fun create(form: CampsiteForm) {
         if (saving || createdId != null) return

@@ -59,6 +59,12 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import kotlinx.coroutines.ensureActive
 
+/**
+ * Shows the available lotteries and lets users view their campsites.
+ *
+ * @param user The current user.
+ * @param onCampsiteClick Opens the selected campsite.
+ */
 @Composable
 fun LotteriesScreen(user: User, onCampsiteClick: (String) -> Unit) {
     val service = remember { LotteryService() }
@@ -176,6 +182,14 @@ private fun LotteryCard(
     }
 }
 
+/**
+ * Shows a dialog for joining a lottery waiting list.
+ *
+ * @param lottery The lottery being joined.
+ * @param campsite The campsite for the lottery.
+ * @param onCancel Closes the dialog.
+ * @param onConfirm Joins the waiting list with the selected group size.
+ */
 @Composable
 fun JoinWaitingListDialog(
     lottery: Lottery,
@@ -266,6 +280,13 @@ fun JoinWaitingListDialog(
     )
 }
 
+/**
+ * Shows a dialog to confirm leaving a lottery waiting list.
+ *
+ * @param campsiteName The name of the campsite.
+ * @param onCancel Closes the dialog.
+ * @param onConfirm Removes the user from the waiting list.
+ */
 @Composable
 fun LeaveWaitingListDialog(
     campsiteName: String,

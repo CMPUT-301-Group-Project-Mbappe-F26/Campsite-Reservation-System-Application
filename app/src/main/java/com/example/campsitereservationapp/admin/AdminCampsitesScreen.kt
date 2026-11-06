@@ -78,7 +78,12 @@ fun adminCampsiteRows(campsites: List<Campsite>, owners: List<User>): List<Admin
     }.sortedBy { it.name.lowercase() }
 }
 
-// Loads all campsites for the admin and removes one after the admin confirms.
+/**
+ * Loads all campsites for the admin and removes one after the admin confirms.
+ *
+ * @param onBack Goes back to the previous screen.
+ * @param onCampsiteClick Opens the selected campsite.
+ */
 @Composable
 fun AdminCampsitesScreen(
     onBack: () -> Unit,

@@ -32,6 +32,14 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
 private enum class Field { NAME, EMAIL, PHONE }
 
 // Lets the user edit and save their profile details.
+/**
+ * Shows the profile editing screen where users can update their details.
+ *
+ * @param user The current user.
+ * @param onSave Saves the updated profile.
+ * @param onCancel Goes back without saving.
+ * @param saving Whether the profile is currently being saved.
+ */
 @Composable
 fun EditProfileScreen(
     user: User,

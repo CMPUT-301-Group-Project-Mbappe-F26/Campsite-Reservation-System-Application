@@ -27,10 +27,15 @@ import com.google.firebase.auth.FirebaseAuth
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 
+/**
+ * Main activity that starts the application.
+ */
 class MainActivity : ComponentActivity() {
     private var notificationLotteryId by mutableStateOf<String?>(null)
-
-    // Sets up the app screens and loads the signed-in profile.
+    /**
+    * Sets up the app screens and loads the signed-in profile.
+    * @param savedInstanceState The saved activity state, if available.
+    */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         notificationLotteryId = intent.getStringExtra(LotteryNotificationService.EXTRA_LOTTERY_ID)
@@ -148,7 +153,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
+    /**
+     * Gets the lottery ID when a new notification intent comes in.
+     *
+     * @param intent The new intent received.
+     */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         notificationLotteryId = intent.getStringExtra(LotteryNotificationService.EXTRA_LOTTERY_ID)

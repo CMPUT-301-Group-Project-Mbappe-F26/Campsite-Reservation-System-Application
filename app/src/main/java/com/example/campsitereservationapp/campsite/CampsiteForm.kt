@@ -24,7 +24,13 @@ data class CampsiteForm(
     val rules: String = "",
     val cancellationPolicy: String = "Flexible"
 ) : Serializable {
-    // Checks the fields in one registration step.
+
+    /**
+     * Checks the form for errors in the current step.
+     *
+     * @param step The step being checked.
+     * @return The errors found in the form.
+     */
     fun errors(step: Int): Map<String, String> = buildMap {
         when (step) {
             0 -> {
@@ -68,7 +74,11 @@ data class CampsiteForm(
             }
         }
     }
-
+    /**
+     * Creates a campsite using the information entered in the form.
+     *
+     * @return The new campsite.
+     */
     // Converts a valid form into a campsite ready to save.
     fun createCampsiteData(): Campsite {
         require((0..3).all { errors(it).isEmpty() }) { "Please correct the required fields." }

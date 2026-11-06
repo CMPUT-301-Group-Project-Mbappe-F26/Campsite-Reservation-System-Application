@@ -45,6 +45,14 @@ import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import kotlinx.coroutines.launch
 
 // Handles the main tabs, host screen and admin screen navigation.
+/**
+ * Shows the main screens and handles navigation between them.
+ *
+ * @param user The current user.
+ * @param onSaveProfile Saves changes to the user's profile.
+ * @param openLotteryId The lottery to open from a notification, if any.
+ * @param onLotteryOpened Called after the lottery is opened.
+ */
 @Composable
 fun MainScreen(
     user: User,

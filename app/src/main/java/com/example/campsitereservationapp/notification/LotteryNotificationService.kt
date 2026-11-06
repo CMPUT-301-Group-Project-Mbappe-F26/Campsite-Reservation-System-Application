@@ -19,8 +19,15 @@ import com.example.campsitereservationapp.model.formatReservationDate
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 
-enum class LotteryResult { WON, LOST }
+enum class LotteryResult { WON, LOST }  // Results of a lottery for a user
 
+/**
+ * Checks if a user won or lost a lottery.
+ *
+ * @param lottery The lottery being checked.
+ * @param userId The ID of the user.
+ * @return The user's lottery result.
+ */
 fun lotteryResult(lottery: Lottery, userId: String): LotteryResult? {
     if (!lottery.drawCompleted || userId !in lottery.registered) return null
     if (userId in lottery.pending) return LotteryResult.WON
@@ -28,6 +35,11 @@ fun lotteryResult(lottery: Lottery, userId: String): LotteryResult? {
     return LotteryResult.LOST
 }
 
+/**
+ * Handles notifications about lottery results.
+ *
+ * @param context The app context.
+ */
 class LotteryNotificationService(private val context: Context) {
     private val db = FirebaseFirestore.getInstance()
     private val seen = context.getSharedPreferences("lottery_notifications", Context.MODE_PRIVATE)
