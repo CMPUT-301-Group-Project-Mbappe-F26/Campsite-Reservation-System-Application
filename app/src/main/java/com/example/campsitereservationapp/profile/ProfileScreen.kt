@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Notifications
@@ -30,12 +31,13 @@ import androidx.compose.ui.unit.sp
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 
-// Shows account information and the switch to host mode.
+// Shows account information, the switch to host mode, and the Admin Dashboard link for admins.
 @Composable
 fun ProfileScreen(
     user: User,
     onEditClick: () -> Unit,
-    onHostClick: () -> Unit = {}
+    onHostClick: () -> Unit = {},
+    onAdminClick: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -137,6 +139,15 @@ fun ProfileScreen(
                 )
             }
             Chevron(color = PinedrawColors.Amber)
+        }
+
+        // Admin tools, only for accounts marked as admins
+        if (user.isAdmin) {
+            Spacer(Modifier.height(24.dp))
+            SectionLabel("ADMIN")
+            OptionGroup {
+                ProfileOption("Admin Dashboard", Icons.Default.Build, onClick = onAdminClick)
+            }
         }
 
         Spacer(Modifier.height(24.dp))

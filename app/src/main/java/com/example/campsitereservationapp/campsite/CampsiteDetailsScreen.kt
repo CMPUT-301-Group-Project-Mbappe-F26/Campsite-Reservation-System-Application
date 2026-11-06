@@ -44,17 +44,19 @@ import java.util.Locale
 /**
  * Loads a campsite and displays its details, with extra options for its owner.
  *
- * Hides other users' unpublished campsites. Create Lottery is shown to the owner and
+ * Hides other users' unpublished campsites, except from admins. Create Lottery is shown to the owner and
  * opens [LotteryCreation] for the loaded campsite; closing that form returns here.
  * The owner also sees the current lottery's waiting list ([LotteryEntrantsSection]).
  * Loading failures display an error with a retry action.
  *
  * @param campsiteId Firestore document ID of the campsite to load.
  * @param onBack Returns to the owner's campsite list.
+ * @param fromDiscover True when an entrant opened the campsite from Discover.
+ * @param asAdmin True when an admin opened the campsite from the Admin Dashboard.
  */
 // Loads and shows a campsite, with extra options when the signed-in user owns it.
 @Composable
-fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: Boolean = false) {
+fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: Boolean = false, asAdmin: Boolean = false) {
     val service = remember { CampsiteService() }
     var openLottery by remember(campsiteId) { mutableStateOf<Lottery?>(null) } // Store the campsite's open lottery
     var lotteryStatus by remember(campsiteId) { mutableStateOf("Checking lottery...") }  // Lottery status message
@@ -73,7 +75,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: 
             check(ownerId != null) { "Not signed in" }
             val result = withTimeoutOrNull(20000) { service.getCampsite(campsiteId) }
             if (result == null) error = "This campsite is unavailable or could not be loaded. Please try again."
-            else if (!canViewCampsite(result, ownerId))
+            else if (!canViewCampsite(result, ownerId, asAdmin))
                 error = "This campsite is unavailable or could not be loaded. Please try again."
             else campsite = result
         } catch (_: Exception) {
@@ -113,7 +115,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: 
         TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text(getCampsiteBackLabel(fromDiscover))  // Returns either discover or my campsites
+            Text(getCampsiteBackLabel(fromDiscover, asAdmin))  // Returns to Discover, My Campsites or the admin list
         }
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -128,7 +130,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: 
                     CampsitePhoto(site.imageUrls.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         Text(site.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
-                        if (canShowOwnerControls(site, ownerId, fromDiscover)) Button(
+                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin)) Button(
                             onClick = { creatingLottery = true },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                             shape = CircleShape,
@@ -202,7 +204,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: 
                             }
                         }
                         // Only the owner sees who has joined the waiting list
-                        if (canShowOwnerControls(site, ownerId, fromDiscover)) LotteryEntrantsSection(site.id)
+                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin)) LotteryEntrantsSection(site.id)
 
                         DetailCard {
                             Text("Description", style = MaterialTheme.typography.titleLarge)
@@ -233,7 +235,7 @@ fun CampsiteDetailsScreen(campsiteId: String, onBack: () -> Unit, fromDiscover: 
                             Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
                             DetailRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
                             if (site.requireRulesAcceptance) Text("Entrants must accept the rules.", color = PinedrawColors.TextMuted)
-                            if (canShowOwnerControls(site, ownerId, fromDiscover)) OwnerPolicyEditor(
+                            if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin)) OwnerPolicyEditor(
                                 campsiteId = site.id,
                                 rules = site.rules,
                                 onSaved = { campsite = site.copy(rules = it) }
@@ -414,14 +416,15 @@ internal fun CampsitePhoto(url: String?, modifier: Modifier = Modifier) {
  * Checks if a user can view a campsite.
  *
  * Published campsites can be viewed by anyone, while unpublished
- * campsites can only be viewed by their owner.
+ * campsites can only be viewed by their owner or an admin.
  *
  * @param campsite The campsite being checked.
  * @param userId ID of the current user.
+ * @param asAdmin True if the user is viewing as an admin.
  * @return True if the user can view the campsite.
  */
-fun canViewCampsite(campsite: Campsite, userId: String?): Boolean {
-    return campsite.published || campsite.isOwnedBy(userId)
+fun canViewCampsite(campsite: Campsite, userId: String?, asAdmin: Boolean = false): Boolean {
+    return campsite.published || campsite.isOwnedBy(userId) || asAdmin
 }
 /**
  * Checks if the owner controls should be displayed.
@@ -445,11 +448,15 @@ fun canShowOwnerControls(
  * Gets the correct back button label based on where the user came from.
  *
  * @param fromDiscover True if the campsite was opened from Discover.
- * @return "Discover" or "My Campsites".
+ * @param asAdmin True if the campsite was opened from the Admin Dashboard.
+ * @return "Discover", "All Campsites" or "My Campsites".
  */
-fun getCampsiteBackLabel(fromDiscover: Boolean): String {
+fun getCampsiteBackLabel(fromDiscover: Boolean, asAdmin: Boolean = false): String {
     if (fromDiscover) {
         return "Discover"
+    }
+    if (asAdmin) {
+        return "All Campsites"
     }
 
     return "My Campsites"
