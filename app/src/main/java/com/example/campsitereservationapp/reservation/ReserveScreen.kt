@@ -36,7 +36,27 @@ import java.util.Locale
 
 private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
 
-// Loads the lottery and campsite a winner is reserving. Notifications can open this with a lottery ID.
+/*
+ * Lets a lottery winner pick available dates and reserve the campsite (US 01.04.01), agree
+ * to the campsite's rules first when the owner requires it (US 02.11.01), or decline their
+ * spot (US 01.04.03).
+ *
+ * [ReserveScreen] loads the lottery and campsite from Firebase. [ReserveFlow] draws the
+ * date picker, review step and decline dialog, and receives reserve and decline as
+ * functions, so intent tests can run it without Firebase.
+ *
+ * Outstanding issues: declining does not yet redraw the spot for the next entrant
+ * (US 02.05.01), and the winning-lottery notification that should open this screen
+ * (US 01.03.01) is not built yet; it is opened from My Reservations for now.
+ */
+
+/**
+ * Loads the lottery and campsite a winner is reserving. Notifications can open this with a lottery ID.
+ *
+ * @param lotteryId Firestore document ID of the lottery the entrant won.
+ * @param onBack Returns to the previous screen.
+ * @param onReserved Called after the reservation is confirmed.
+ */
 @Composable
 fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit) {
     val reservationService = remember { ReservationService() }
@@ -91,20 +111,44 @@ fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit)
                     TextButton(onClick = { refresh++ }) { Text("Try again") }
                 }
             }
-            else -> ReserveFlow(loadedLottery, loadedCampsite, reservationService, onBack, onReserved)
+            else -> ReserveFlow(
+                loadedLottery, loadedCampsite,
+                onReserve = { checkIn, checkOut, rulesAccepted ->
+                    reservationService.reserve(loadedLottery.id, checkIn, checkOut, rulesAccepted)
+                },
+                onDecline = { reservationService.decline(loadedLottery.id) },
+                onBack = onBack, onReserved = onReserved
+            )
         }
     }
 }
 
-// Takes the winner from picking dates to agreeing to the rules and confirming.
+/**
+ * Takes the winner from picking dates to agreeing to the rules and confirming.
+ *
+ * Unavailable dates are greyed out. Continue is only enabled once every night is open, and
+ * Reserve only once the rules are accepted when the campsite requires it.
+ *
+ * @param lottery The lottery the entrant won.
+ * @param campsite The campsite being reserved.
+ * @param onReserve Books the check-in date, check-out date and rules acceptance; returns an error message or null.
+ * @param onDecline Gives up the spot; returns an error message or null.
+ * @param onBack Returns to the previous screen, including after declining.
+ * @param onReserved Called after the reservation is confirmed.
+ * @param initialCheckIn Check-in date to preselect as yyyy-MM-dd, or null.
+ * @param initialCheckOut Check-out date to preselect as yyyy-MM-dd, or null.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ColumnScope.ReserveFlow(
+internal fun ColumnScope.ReserveFlow(
     lottery: Lottery,
     campsite: Campsite,
-    service: ReservationService,
+    onReserve: suspend (checkIn: String, checkOut: String, rulesAccepted: Boolean) -> String?,
+    onDecline: suspend () -> String?,
     onBack: () -> Unit,
-    onReserved: () -> Unit
+    onReserved: () -> Unit,
+    initialCheckIn: String? = null,
+    initialCheckOut: String? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -122,6 +166,8 @@ private fun ColumnScope.ReserveFlow(
         }
     }
     val picker = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = initialCheckIn?.let(::reservationDateToUtcMillis),
+        initialSelectedEndDateMillis = initialCheckOut?.let(::reservationDateToUtcMillis),
         initialDisplayedMonthMillis = reservationDateToUtcMillis(lottery.stayStartDate),
         selectableDates = selectableDates
     )
@@ -168,7 +214,7 @@ private fun ColumnScope.ReserveFlow(
                     error = ""
                     scope.launch {
                         try {
-                            val result = withTimeoutOrNull(20000) { service.decline(lottery.id) ?: "" }
+                            val result = withTimeoutOrNull(20000) { onDecline() ?: "" }
                             when {
                                 result == null -> error = "Could not decline your spot. Please try again."
                                 result.isNotEmpty() -> error = result
@@ -228,7 +274,7 @@ private fun ColumnScope.ReserveFlow(
                 scope.launch {
                     try {
                         val result = withTimeoutOrNull(20000) {
-                            service.reserve(lottery.id, checkIn.orEmpty(), checkOut.orEmpty(), rulesAccepted) ?: ""
+                            onReserve(checkIn.orEmpty(), checkOut.orEmpty(), rulesAccepted) ?: ""
                         }
                         when {
                             result == null -> error = "Could not confirm your reservation. Please try again."
