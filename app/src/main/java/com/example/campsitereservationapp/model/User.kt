@@ -6,5 +6,6 @@ data class User(
     val email: String = "",
     val phone: String = "",
     val city: String = "",
-    val isOwner: Boolean = false
+    val isOwner: Boolean = false,
+    val notificationsEnabled: Boolean = true
 )

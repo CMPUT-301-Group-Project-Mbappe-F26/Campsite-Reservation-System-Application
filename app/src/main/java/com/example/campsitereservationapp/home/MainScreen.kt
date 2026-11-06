@@ -46,7 +46,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun MainScreen(
     user: User,
-    onSaveProfile: suspend (User) -> Unit
+    onSaveProfile: suspend (User) -> Unit,
+    openLotteryId: String? = null,
+    onLotteryOpened: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf(false) }
@@ -62,6 +64,12 @@ fun MainScreen(
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    LaunchedEffect(openLotteryId) {
+        if (!openLotteryId.isNullOrBlank()) {
+            reserveLotteryId = openLotteryId
+            onLotteryOpened()
+        }
+    }
     LaunchedEffect(registration.createdId) {
         if (registration.createdId != null) {
             registering = false
