@@ -25,6 +25,32 @@ data class CampsiteForm(
     val cancellationPolicy: String = "Flexible"
 ) : Serializable {
 
+    companion object {
+        // Prefills the edit form with the campsite's saved details.
+        fun fromCampsite(campsite: Campsite) = CampsiteForm(
+            name = campsite.name,
+            description = campsite.description,
+            occupancy = campsite.maxOccupancy?.toString().orEmpty(),
+            price = campsite.pricePerNight.toString(),
+            tags = campsite.tags.joinToString(", "),
+            location = campsite.location,
+            latitude = campsite.latitude.toString(),
+            longitude = campsite.longitude.toString(),
+            amenities = campsite.amenities,
+            photos = campsite.imageUrls,
+            availableDays = campsite.availableDays.ifEmpty { (1..7).toList() },
+            availableFrom = campsite.availableFrom,
+            availableUntil = campsite.availableUntil,
+            rules = campsite.rules,
+            cancellationPolicy = campsite.cancellationPolicy
+        )
+    }
+
+    // Ignores the order of choices that don't have a display order.
+    fun hasChangesFrom(original: CampsiteForm): Boolean =
+        copy(availableDays = availableDays.sorted(), amenities = amenities.sorted()) !=
+            original.copy(availableDays = original.availableDays.sorted(), amenities = original.amenities.sorted())
+
     /**
      * Checks the form for errors in the current step.
      *

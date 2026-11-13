@@ -1,6 +1,7 @@
 package com.example.campsitereservationapp.service
 
 import android.net.Uri
+import com.example.campsitereservationapp.campsite.CampsiteForm
 import com.example.campsitereservationapp.model.Campsite
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -13,6 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 
 /**
  * Handles campsite data using Firebase.
@@ -113,6 +115,59 @@ class CampsiteService {
         return doc.toObject(Campsite::class.java)?.copy(id = doc.id)
     }
 
+    // Updates the owner's listing and keeps its ID, rating and publication status.
+    suspend fun updateCampsite(id: String, original: CampsiteForm, form: CampsiteForm): Campsite {
+        val uid = auth.currentUser?.uid ?: error("Not signed in")
+        val doc = db.collection("campsites").document(id)
+        val details = form.createCampsiteData()
+        val current = doc.get(com.google.firebase.firestore.Source.SERVER).await().toObject(Campsite::class.java)
+        check(current?.isOwnedBy(uid) == true) { "This campsite is unavailable or you no longer own it." }
+        check(CampsiteForm.fromCampsite(current) == original) { "This campsite changed. Reopen the form before saving." }
+        val urls = form.photos.map { photo ->
+            if (photo in current.imageUrls) photo
+            else {
+                val uri = Uri.parse(photo)
+                require(uri.scheme == "content" || uri.scheme == "file")
+                // Give new uploads their own paths so existing photos stay intact until Save succeeds.
+                val image = FirebaseStorage.getInstance().reference
+                    .child("campsites/$uid/$id/photo-${UUID.randomUUID()}")
+                image.putFile(uri).await()
+                image.downloadUrl.await().toString()
+            }
+        }
+        return db.runTransaction { transaction ->
+            check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+            val latest = transaction.get(doc).toObject(Campsite::class.java)
+            check(latest?.isOwnedBy(uid) == true) { "This campsite is unavailable or you no longer own it." }
+            check(CampsiteForm.fromCampsite(latest) == original) { "This campsite changed. Reopen the form before saving." }
+            val updated = details.copy(
+                id = id, ownerId = uid, imageUrls = urls, published = latest.published,
+                averageRating = latest.averageRating, requireRulesAcceptance = latest.requireRulesAcceptance,
+                availableDays = if (form.availableDays.sorted() == original.availableDays.sorted()) {
+                    latest.availableDays
+                } else details.availableDays
+            )
+            transaction.update(doc, mapOf(
+                "name" to updated.name,
+                "description" to updated.description,
+                "location" to updated.location,
+                "latitude" to updated.latitude,
+                "longitude" to updated.longitude,
+                "maxOccupancy" to updated.maxOccupancy,
+                "pricePerNight" to updated.pricePerNight,
+                "tags" to updated.tags,
+                "amenities" to updated.amenities,
+                "imageUrls" to updated.imageUrls,
+                "availableDays" to updated.availableDays,
+                "availableFrom" to updated.availableFrom,
+                "availableUntil" to updated.availableUntil,
+                "rules" to updated.rules,
+                "cancellationPolicy" to updated.cancellationPolicy
+            ))
+            updated
+        }.await()
+    }
+
     // Saves the rules and policy entrants see for a campsite. Firestore rules limit this to its owner.
     suspend fun updateCampsitePolicy(id: String, rules: String) {
         if (auth.currentUser == null) throw Exception("Not signed in")
@@ -176,24 +231,51 @@ class CampsiteService {
         val uid = auth.currentUser?.uid ?: error("Not signed in")
         val admin = db.collection("users").document(uid).get().await().toObject(User::class.java)
         check(admin?.isAdmin == true) { "Only admins can remove campsites." }
+        deleteCampsite(campsiteId, uid, asAdmin = true)
+    }
 
+    // Removes a listing from the owner's edit screen.
+    suspend fun deleteOwnedCampsite(campsiteId: String) {
+        val uid = auth.currentUser?.uid ?: error("Not signed in")
+        deleteCampsite(campsiteId, uid, asAdmin = false)
+    }
+
+    // Closes active lotteries and removes the listing in one transaction.
+    private suspend fun deleteCampsite(campsiteId: String, uid: String, asAdmin: Boolean) {
+        val campsite = db.collection("campsites").document(campsiteId)
+        if (!asAdmin) {
+            val current = campsite.get(com.google.firebase.firestore.Source.SERVER).await().toObject(Campsite::class.java)
+            check(current?.isOwnedBy(uid) == true) { "You can only delete your own campsite." }
+        }
         val lotteries = db.collection("lotteries")
             .whereEqualTo("campsiteId", campsiteId)
-            .get().await()
-        val batch = db.batch()
-        for (doc in lotteries.documents) {
-            val lottery = doc.toObject(Lottery::class.java) ?: continue
-            if (isLotteryActive(lottery)) {
+            .get(com.google.firebase.firestore.Source.SERVER).await()
+        db.runTransaction { transaction ->
+            check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+            if (asAdmin) {
+                val profile = transaction.get(db.collection("users").document(uid)).toObject(User::class.java)
+                check(profile?.isAdmin == true) { "Only admins can remove campsites." }
+            } else {
+                val current = transaction.get(campsite).toObject(Campsite::class.java)
+                check(current?.isOwnedBy(uid) == true) { "You can only delete your own campsite." }
+            }
+            // Read each lottery again so a concurrent draw cannot be overwritten.
+            val active = lotteries.documents.mapNotNull { document ->
+                val lottery = transaction.get(document.reference).toObject(Lottery::class.java)
+                if (lottery != null && isLotteryActive(lottery)) document.reference to lottery else null
+            }
+            for ((reference, lottery) in active) {
                 val closed = closeLotteryForRemovedCampsite(lottery)
-                batch.update(doc.reference, mapOf(
+                transaction.update(reference, mapOf(
                     "registered" to closed.registered,
+                    "registeredGroupSizes" to emptyMap<String, Int>(),
                     "pending" to closed.pending,
                     "drawCompleted" to closed.drawCompleted
                 ))
             }
-        }
-        batch.delete(db.collection("campsites").document(campsiteId))
-        batch.commit().await()
+            transaction.delete(campsite)
+            Unit
+        }.await()
     }
 }
 

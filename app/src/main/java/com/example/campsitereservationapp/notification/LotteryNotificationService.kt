@@ -44,13 +44,16 @@ class LotteryNotificationService(private val context: Context) {
     private val db = FirebaseFirestore.getInstance()
     private val seen = context.getSharedPreferences("lottery_notifications", Context.MODE_PRIVATE)
 
+    // Watches lottery results until the activity removes the listener.
     fun listen(user: User): ListenerRegistration? {
         if (!user.notificationsEnabled) return null
         createChannel()
         val loading = mutableSetOf<String>()
-        return db.collection("lotteries")
+        var listening = true
+        val registration = db.collection("lotteries")
             .whereArrayContains("registered", user.id)
             .addSnapshotListener { snapshot, _ ->
+                if (!listening) return@addSnapshotListener
                 snapshot?.documents?.forEach { document ->
                     val lottery = document.toObject(Lottery::class.java)?.copy(id = document.id)
                         ?: return@forEach
@@ -61,7 +64,7 @@ class LotteryNotificationService(private val context: Context) {
                     db.collection("campsites").document(lottery.campsiteId).get()
                         .addOnSuccessListener { campsite ->
                             val name = campsite.getString("name").orEmpty()
-                            if (name.isNotBlank() && show(result, lottery, name)) {
+                            if (listening && name.isNotBlank() && show(result, lottery, name)) {
                                 seen.edit().putBoolean(key, true).apply()
                             }
                             loading.remove(key)
@@ -69,6 +72,11 @@ class LotteryNotificationService(private val context: Context) {
                         .addOnFailureListener { loading.remove(key) }
                 }
             }
+        return ListenerRegistration {
+            // A campsite lookup may still finish after notifications are turned off.
+            listening = false
+            registration.remove()
+        }
     }
 
     private fun show(result: LotteryResult, lottery: Lottery, campsiteName: String): Boolean {
