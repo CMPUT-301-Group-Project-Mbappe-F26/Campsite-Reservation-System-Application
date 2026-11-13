@@ -158,7 +158,8 @@ fun MainScreen(
                 )
                 hostMode && campsiteId != null -> CampsiteDetailsScreen(
                     campsiteId = campsiteId!!,
-                    onBack = { campsiteId = null }
+                    onBack = { campsiteId = null },
+                    onDeleted = { campsiteId = null }
                 )
                 hostMode && showingCampsites -> MyCampsitesScreen(
                     onBack = { showingCampsites = false },

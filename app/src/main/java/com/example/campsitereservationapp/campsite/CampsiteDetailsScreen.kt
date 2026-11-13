@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -66,7 +67,8 @@ fun CampsiteDetailsScreen(
     onBack: () -> Unit,
     fromDiscover: Boolean = false,
     asAdmin: Boolean = false,
-    entrantId: String? = null
+    entrantId: String? = null,
+    onDeleted: (() -> Unit)? = null
 ) {
     val service = remember { CampsiteService() }
     val lotteryService = remember { LotteryService() }
@@ -81,6 +83,7 @@ fun CampsiteDetailsScreen(
     var error by remember(campsiteId, ownerId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
     var creatingLottery by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
+    var editingCampsite by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
     var joining by rememberSaveable(campsiteId) { mutableStateOf(false) }
     var leaving by rememberSaveable(campsiteId) { mutableStateOf(false) }
 
@@ -127,6 +130,23 @@ fun CampsiteDetailsScreen(
     }
 
     val ownedCampsite = campsite?.takeIf { ownerId != null && it.ownerId == ownerId }
+    if (editingCampsite && ownedCampsite != null && onDeleted != null && !loading && error.isEmpty()) {
+        EditOwnedCampsite(
+            campsite = ownedCampsite,
+            service = service,
+            onCancel = { editingCampsite = false },
+            onSaved = { updated ->
+                campsite = updated
+                editingCampsite = false
+                Toast.makeText(context, "Campsite updated", Toast.LENGTH_SHORT).show()
+            },
+            onDeleted = {
+                Toast.makeText(context, "Campsite deleted", Toast.LENGTH_SHORT).show()
+                onDeleted()
+            }
+        )
+        return
+    }
     if (creatingLottery && !loading && error.isEmpty() && ownedCampsite != null) {
         LotteryCreation(campsite = ownedCampsite, onCancel = { creatingLottery = false })
         return
@@ -155,6 +175,17 @@ fun CampsiteDetailsScreen(
                     CampsitePhoto(site.imageUrls.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         Text(site.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
+                        if (onDeleted != null && site.isOwnedBy(ownerId)) {
+                            OutlinedButton(
+                                onClick = { editingCampsite = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = CircleShape
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Edit campsite", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                         if (entrantId != null && lottery != null) LotteryDetailsActions(
                             lottery = lottery!!,
                             entrantId = entrantId,
@@ -319,6 +350,56 @@ fun CampsiteDetailsScreen(
                 }
             }
         }
+    )
+}
+
+// Saves or deletes the current listing and keeps the draft open if the request fails.
+@Composable
+private fun EditOwnedCampsite(
+    campsite: Campsite,
+    service: CampsiteService,
+    onCancel: () -> Unit,
+    onSaved: (Campsite) -> Unit,
+    onDeleted: () -> Unit
+) {
+    val original = remember(campsite) { CampsiteForm.fromCampsite(campsite) }
+    val scope = rememberCoroutineScope()
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+
+    fun saveChange(failure: String, action: suspend () -> Unit) {
+        if (saving) return
+        saving = true
+        error = ""
+        scope.launch {
+            try {
+                action()
+            } catch (exception: Exception) {
+                coroutineContext.ensureActive()
+                error = exception.lotteryMessage(failure)
+            } finally {
+                saving = false
+            }
+        }
+    }
+
+    CreateCampsiteScreen(
+        saving = saving,
+        saveError = error,
+        onCancel = onCancel,
+        onCreate = { form ->
+            saveChange("Could not save campsite changes. Please try again.") {
+                onSaved(service.updateCampsite(campsite.id, original, form))
+            }
+        },
+        original = original,
+        onDelete = {
+            saveChange("Could not delete the campsite. Please try again.") {
+                service.deleteOwnedCampsite(campsite.id)
+                onDeleted()
+            }
+        },
+        requiresRulesAcceptance = campsite.requireRulesAcceptance
     )
 }
 
