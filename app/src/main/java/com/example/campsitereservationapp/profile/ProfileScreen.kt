@@ -13,10 +13,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -25,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -37,7 +37,9 @@ fun ProfileScreen(
     user: User,
     onEditClick: () -> Unit,
     onHostClick: () -> Unit = {},
-    onAdminClick: () -> Unit = {}
+    onAdminClick: () -> Unit = {},
+    savingNotifications: Boolean = false,
+    onNotificationsChanged: (Boolean) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -155,8 +157,6 @@ fun ProfileScreen(
         OptionGroup {
             ProfileOption("Personal information", Icons.Default.Person, onClick = onEditClick)
             OptionDivider()
-            ProfileOption("Notifications", Icons.Default.Notifications) {}
-            OptionDivider()
             ProfileOption("Policy & guidelines", Icons.Default.Info) {}
             OptionDivider()
             ProfileOption("Sign-in & security", Icons.Default.Lock) {}
@@ -165,7 +165,18 @@ fun ProfileScreen(
         Spacer(Modifier.height(24.dp))
         SectionLabel("SETTINGS")
         OptionGroup {
-            ProfileOption("Settings", Icons.Default.Settings) {}
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Lottery notifications", modifier = Modifier.weight(1f))
+                Switch(
+                    checked = user.notificationsEnabled,
+                    onCheckedChange = onNotificationsChanged,
+                    enabled = !savingNotifications,
+                    modifier = Modifier.semantics { contentDescription = "Lottery notifications" }
+                )
+            }
         }
         Spacer(Modifier.height(16.dp))
     }

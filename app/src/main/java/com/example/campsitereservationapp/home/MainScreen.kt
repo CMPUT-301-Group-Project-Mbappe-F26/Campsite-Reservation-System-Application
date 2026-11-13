@@ -242,9 +242,27 @@ fun MainScreen(
                 )
                 else -> ProfileScreen(
                     user = user,
-                    onEditClick = { editing = true },
+                    onEditClick = { if (!saving) editing = true },
                     onHostClick = { hostMode = true },
-                    onAdminClick = { if (user.isAdmin) adminMode = true }
+                    onAdminClick = { if (user.isAdmin) adminMode = true },
+                    savingNotifications = saving,
+                    onNotificationsChanged = { enabled ->
+                        if (!saving) {
+                            saving = true
+                            error = ""
+                            scope.launch {
+                                try {
+                                    onSaveProfile(user.copy(notificationsEnabled = enabled))
+                                } catch (exception: kotlinx.coroutines.CancellationException) {
+                                    throw exception
+                                } catch (_: Exception) {
+                                    error = "Could not save notification settings. Try again."
+                                } finally {
+                                    saving = false
+                                }
+                            }
+                        }
+                    }
                 )
             }
 
