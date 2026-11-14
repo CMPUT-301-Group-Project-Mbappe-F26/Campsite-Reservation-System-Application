@@ -19,10 +19,7 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
 /*
  * Admin Dashboard, the starting point for admin tools (US 03.04.01).
  *
- * Only shown to users whose profile has isAdmin set. It opens [AdminCampsitesScreen].
- *
- * Outstanding issues: only campsite browsing and removal exist so far; profile, image
- * and log browsing (US 03.02 to 03.12) still need their own buttons here.
+ * Only shown to users whose profile has isAdmin set.
  */
 
 /**
@@ -30,11 +27,13 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
  *
  * @param onBack Goes back to the previous screen.
  * @param onCampsitesClick Opens the campsite management screen.
+ * @param onMessageLogsClick Opens the owner message logs.
  */
 @Composable
 fun AdminDashboardScreen(
     onBack: () -> Unit,
-    onCampsitesClick: () -> Unit
+    onCampsitesClick: () -> Unit,
+    onMessageLogsClick: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -80,6 +79,16 @@ fun AdminDashboardScreen(
             Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(8.dp))
             Text("Campsites", fontWeight = FontWeight.Bold)
+        }
+        if (onMessageLogsClick != null) {
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = onMessageLogsClick,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = CircleShape
+            ) {
+                Text("Message Logs", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

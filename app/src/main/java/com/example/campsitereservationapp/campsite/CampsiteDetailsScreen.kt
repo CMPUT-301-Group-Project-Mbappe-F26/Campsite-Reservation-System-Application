@@ -68,7 +68,8 @@ fun CampsiteDetailsScreen(
     fromDiscover: Boolean = false,
     asAdmin: Boolean = false,
     entrantId: String? = null,
-    onDeleted: (() -> Unit)? = null
+    onDeleted: (() -> Unit)? = null,
+    onMessageGuests: (() -> Unit)? = null
 ) {
     val service = remember { CampsiteService() }
     val lotteryService = remember { LotteryService() }
@@ -184,6 +185,11 @@ fun CampsiteDetailsScreen(
                                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text("Edit campsite", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        if (onMessageGuests != null && site.isOwnedBy(ownerId)) {
+                            OutlinedButton(onClick = onMessageGuests, modifier = Modifier.fillMaxWidth(), shape = CircleShape) {
+                                Text("Message guests", fontWeight = FontWeight.SemiBold)
                             }
                         }
                         if (entrantId != null && lottery != null) LotteryDetailsActions(
