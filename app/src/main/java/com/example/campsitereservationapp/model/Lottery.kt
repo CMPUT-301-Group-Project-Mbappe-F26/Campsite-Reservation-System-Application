@@ -57,7 +57,8 @@ data class Lottery(
     val pending: List<String> = emptyList(),
     val booked: List<Reservation> = emptyList(),
     val useMaxCapacity: Boolean = false,
-    val drawCompleted: Boolean = false
+    val drawCompleted: Boolean = false,
+    val cancelledEntrantIds: List<String> = emptyList()
 ) {
     /**
      * Randomly selects distinct user IDs from [registered], without changing this lottery.

@@ -1,5 +1,6 @@
 package com.example.campsitereservationapp.home
 
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -42,7 +43,9 @@ import com.example.campsitereservationapp.reservation.ReservationDetailsScreen
 import com.example.campsitereservationapp.reservation.ReserveScreen
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 // Handles the main tabs, host screen and admin screen navigation.
 /**
@@ -50,6 +53,7 @@ import kotlinx.coroutines.launch
  *
  * @param user The current user.
  * @param onSaveProfile Saves changes to the user's profile.
+ * @param onDeleteProfile Deletes the current profile and returns to Welcome.
  * @param openLotteryId The lottery to open from a notification, if any.
  * @param onLotteryOpened Called after the lottery is opened.
  */
@@ -57,12 +61,14 @@ import kotlinx.coroutines.launch
 fun MainScreen(
     user: User,
     onSaveProfile: suspend (User) -> Unit,
+    onDeleteProfile: suspend () -> Unit,
     openLotteryId: String? = null,
     onLotteryOpened: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var deletingProfile by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var hostMode by rememberSaveable { mutableStateOf(false) }
     var registering by rememberSaveable { mutableStateOf(false) }
@@ -186,7 +192,35 @@ fun MainScreen(
                     EditProfileScreen(
                         user = user,
                         saving = saving,
-                        onCancel = { editing = false },
+                        deleting = deletingProfile,
+                        onCancel = {
+                            editing = false
+                            error = ""
+                        },
+                        onDelete = {
+                            if (!saving && !deletingProfile) {
+                                deletingProfile = true
+                                error = ""
+                                scope.launch {
+                                    try {
+                                        onDeleteProfile()
+                                    } catch (exception: Exception) {
+                                        coroutineContext.ensureActive()
+                                        val code = (exception as? FirebaseFirestoreException)?.code
+                                        error = when (code) {
+                                            FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                                                "Firebase denied profile deletion. Contact the app team."
+                                            FirebaseFirestoreException.Code.UNAVAILABLE ->
+                                                "Could not reach Firebase. Check your connection and try again."
+                                            else -> "Could not finish deleting your profile. Try again."
+                                        }
+                                        Log.w("ProfileDeletion", "Deletion failed: ${code ?: exception.javaClass.simpleName}")
+                                    } finally {
+                                        deletingProfile = false
+                                    }
+                                }
+                            }
+                        },
                         onSave = { updatedUser ->
                             saving = true
                             error = ""

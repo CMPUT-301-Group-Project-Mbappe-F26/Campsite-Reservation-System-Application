@@ -25,6 +25,7 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawTheme
 import com.google.firebase.auth.FirebaseAuth
 import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.launch
 
 /**
@@ -64,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     if (FirebaseAuth.getInstance().currentUser != null) {
                         try {
-                            user = userService.getOrCreateUser() // Load saved profile
+                            user = userService.loadCurrentUser()
                         } catch (_: Exception) {
                             Toast.makeText(
                                 this@MainActivity,
@@ -138,6 +139,14 @@ class MainActivity : ComponentActivity() {
                             user = user!!,
                             openLotteryId = notificationLotteryId,
                             onLotteryOpened = { notificationLotteryId = null },
+                            onDeleteProfile = {
+                                userService.deleteProfile()
+                                notificationLotteryId = null
+                                intent.removeExtra(LotteryNotificationService.EXTRA_LOTTERY_ID)
+                                NotificationManagerCompat.from(this@MainActivity).cancelAll()
+                                user = null
+                                Toast.makeText(this@MainActivity, "Profile deleted", Toast.LENGTH_SHORT).show()
+                            },
                             onSaveProfile = { updatedUser ->
                                 userService.updateUser(updatedUser) // Save to Firestore
                                 user = updatedUser
