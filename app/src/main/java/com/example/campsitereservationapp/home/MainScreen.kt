@@ -1,5 +1,6 @@
 package com.example.campsitereservationapp.home
 
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.campsitereservationapp.admin.AdminCampsitesScreen
 import com.example.campsitereservationapp.admin.AdminDashboardScreen
+import com.example.campsitereservationapp.admin.AdminMessageLogsScreen
 import com.example.campsitereservationapp.campsite.CreateCampsiteScreen
 import com.example.campsitereservationapp.campsite.CampsiteRegistrationViewModel
 import com.example.campsitereservationapp.campsite.HostDashboardScreen
@@ -35,6 +37,8 @@ import com.example.campsitereservationapp.campsite.MyCampsitesScreen
 import com.example.campsitereservationapp.campsite.CampsiteDetailsScreen
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.lottery.LotteriesScreen
+import com.example.campsitereservationapp.messaging.CampsiteMessagesScreen
+import com.example.campsitereservationapp.messaging.ReservationMessagesScreen
 import com.example.campsitereservationapp.profile.EditProfileScreen
 import com.example.campsitereservationapp.profile.ProfileScreen
 import com.example.campsitereservationapp.reservation.MyReservationsScreen
@@ -42,7 +46,9 @@ import com.example.campsitereservationapp.reservation.ReservationDetailsScreen
 import com.example.campsitereservationapp.reservation.ReserveScreen
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 // Handles the main tabs, host screen and admin screen navigation.
 /**
@@ -50,6 +56,7 @@ import kotlinx.coroutines.launch
  *
  * @param user The current user.
  * @param onSaveProfile Saves changes to the user's profile.
+ * @param onDeleteProfile Deletes the current profile and returns to Welcome.
  * @param openLotteryId The lottery to open from a notification, if any.
  * @param onLotteryOpened Called after the lottery is opened.
  */
@@ -57,12 +64,14 @@ import kotlinx.coroutines.launch
 fun MainScreen(
     user: User,
     onSaveProfile: suspend (User) -> Unit,
+    onDeleteProfile: suspend () -> Unit,
     openLotteryId: String? = null,
     onLotteryOpened: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var deletingProfile by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var hostMode by rememberSaveable { mutableStateOf(false) }
     var registering by rememberSaveable { mutableStateOf(false) }
@@ -71,9 +80,12 @@ fun MainScreen(
     var entrantCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from Discover or Lotteries
     var searchText by rememberSaveable { mutableStateOf("") }  // Keep the search text when opening and closing campsite details
     var reservationId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showingCampsiteMessages by rememberSaveable { mutableStateOf(false) }
+    var messageReservationId by rememberSaveable { mutableStateOf<String?>(null) }
     var reserveLotteryId by rememberSaveable { mutableStateOf<String?>(null) }
     var adminMode by rememberSaveable { mutableStateOf(false) }
     var showingAdminCampsites by rememberSaveable { mutableStateOf(false) }
+    var showingMessageLogs by rememberSaveable { mutableStateOf(false) }
     var adminCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from the admin list
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
@@ -106,10 +118,15 @@ fun MainScreen(
     BackHandler(enabled = entrantCampsiteId != null) { entrantCampsiteId = null }  // Return to Discover after leaving campsite details
     BackHandler(enabled = adminMode) {
         when {
+            showingMessageLogs -> showingMessageLogs = false
             adminCampsiteId != null -> adminCampsiteId = null
             showingAdminCampsites -> showingAdminCampsites = false
             else -> adminMode = false
         }
+    }
+    BackHandler(enabled = showingCampsiteMessages || messageReservationId != null) {
+        if (messageReservationId != null) messageReservationId = null
+        else showingCampsiteMessages = false
     }
     Scaffold(
         contentWindowInsets = WindowInsets(0),
@@ -131,6 +148,16 @@ fun MainScreen(
                 .padding(padding)
         ) {
             when {
+                messageReservationId != null -> ReservationMessagesScreen(
+                    reservationId = messageReservationId!!,
+                    userId = user.id,
+                    onBack = { messageReservationId = null }
+                )
+                hostMode && campsiteId != null && showingCampsiteMessages -> CampsiteMessagesScreen(
+                    campsiteId = campsiteId!!,
+                    onBack = { showingCampsiteMessages = false },
+                    onOpenChat = { messageReservationId = it }
+                )
                 registering -> CreateCampsiteScreen(
                     saving = registration.saving,
                     saveError = registration.error,
@@ -152,14 +179,19 @@ fun MainScreen(
                     onBack = { showingAdminCampsites = false },
                     onCampsiteClick = { adminCampsiteId = it }
                 )
+                adminMode && user.isAdmin && showingMessageLogs -> AdminMessageLogsScreen(
+                    onBack = { showingMessageLogs = false }
+                )
                 adminMode -> AdminDashboardScreen(
                     onBack = { adminMode = false },
-                    onCampsitesClick = { showingAdminCampsites = true }
+                    onCampsitesClick = { showingAdminCampsites = true },
+                    onMessageLogsClick = { if (user.isAdmin) showingMessageLogs = true }
                 )
                 hostMode && campsiteId != null -> CampsiteDetailsScreen(
                     campsiteId = campsiteId!!,
                     onBack = { campsiteId = null },
-                    onDeleted = { campsiteId = null }
+                    onDeleted = { campsiteId = null },
+                    onMessageGuests = { showingCampsiteMessages = true }
                 )
                 hostMode && showingCampsites -> MyCampsitesScreen(
                     onBack = { showingCampsites = false },
@@ -186,7 +218,35 @@ fun MainScreen(
                     EditProfileScreen(
                         user = user,
                         saving = saving,
-                        onCancel = { editing = false },
+                        deleting = deletingProfile,
+                        onCancel = {
+                            editing = false
+                            error = ""
+                        },
+                        onDelete = {
+                            if (!saving && !deletingProfile) {
+                                deletingProfile = true
+                                error = ""
+                                scope.launch {
+                                    try {
+                                        onDeleteProfile()
+                                    } catch (exception: Exception) {
+                                        coroutineContext.ensureActive()
+                                        val code = (exception as? FirebaseFirestoreException)?.code
+                                        error = when (code) {
+                                            FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                                                "Firebase denied profile deletion. Contact the app team."
+                                            FirebaseFirestoreException.Code.UNAVAILABLE ->
+                                                "Could not reach Firebase. Check your connection and try again."
+                                            else -> "Could not finish deleting your profile. Try again."
+                                        }
+                                        Log.w("ProfileDeletion", "Deletion failed: ${code ?: exception.javaClass.simpleName}")
+                                    } finally {
+                                        deletingProfile = false
+                                    }
+                                }
+                            }
+                        },
                         onSave = { updatedUser ->
                             saving = true
                             error = ""
@@ -207,7 +267,8 @@ fun MainScreen(
 
                 reservationId != null -> ReservationDetailsScreen(
                     reservationId = reservationId!!,
-                    onBack = { reservationId = null }
+                    onBack = { reservationId = null },
+                    onOpenMessages = { messageReservationId = reservationId }
                 )
 
                 reserveLotteryId != null -> ReserveScreen(

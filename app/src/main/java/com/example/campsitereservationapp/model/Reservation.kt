@@ -14,13 +14,13 @@ import java.util.TimeZone
  * The functions here do no database work, so the screens, ReservationService and unit
  * tests all share the same rules.
  *
- * Outstanding issues: "Confirmed" is the only status so far, because cancelling
- * (US 01.07.01) is not built yet. Today's date comes from the device's time zone,
- * not Alberta time.
+ * Profile deletion cancels active reservations. The separate cancellation flow
+ * (US 01.07.01) is still outstanding. Dates use the device's time zone.
  */
 
 /** Status of a reservation that is booked and counts toward its lottery's capacity. */
 const val RESERVATION_CONFIRMED = "Confirmed"
+const val RESERVATION_CANCELLED = "Cancelled"
 
 /**
  * An entrant's booking of a campsite, stored at `reservations/{id}` in Firestore and
@@ -35,7 +35,7 @@ const val RESERVATION_CONFIRMED = "Confirmed"
  * @property campsiteName Campsite name saved at booking time, so the list loads without the campsite.
  * @property checkInDate First night of the stay.
  * @property checkOutDate Day the entrant leaves; this night is not part of the stay.
- * @property status Booking status, currently always [RESERVATION_CONFIRMED].
+ * @property status Booking status, either [RESERVATION_CONFIRMED] or [RESERVATION_CANCELLED].
  */
 data class Reservation(
     val id: String = "",
@@ -136,10 +136,12 @@ fun reservationNights(checkIn: String, checkOut: String): List<String> {
  * Gets the reservations that count toward a lottery's capacity.
  *
  * @param lottery The lottery to check.
- * @return The lottery's booked reservations with [RESERVATION_CONFIRMED] status.
+ * @return Confirmed bookings whose entrants have not deleted their profiles.
  */
 fun confirmedReservations(lottery: Lottery): List<Reservation> =
-    lottery.booked.filter { it.status == RESERVATION_CONFIRMED }
+    lottery.booked.filter {
+        it.status == RESERVATION_CONFIRMED && it.entrantId !in lottery.cancelledEntrantIds
+    }
 
 /**
  * Checks whether a night can be booked, which decides which dates are greyed out.

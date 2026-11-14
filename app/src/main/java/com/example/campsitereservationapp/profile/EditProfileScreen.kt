@@ -1,6 +1,7 @@
 package com.example.campsitereservationapp.profile
 
 import android.util.Patterns
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,14 +41,21 @@ private enum class Field { NAME, EMAIL, PHONE }
  * @param onSave Saves the updated profile.
  * @param onCancel Goes back without saving.
  * @param saving Whether the profile is currently being saved.
+ * @param deleting Whether profile deletion is in progress.
+ * @param onDelete Runs after the user confirms permanent deletion.
  */
 @Composable
 fun EditProfileScreen(
     user: User,
     onSave: (User) -> Unit,
     onCancel: () -> Unit,
-    saving: Boolean = false
+    saving: Boolean = false,
+    deleting: Boolean = false,
+    onDelete: () -> Unit
 ) {
+    val busy = saving || deleting
+    var confirmDelete by rememberSaveable(user.id) { mutableStateOf(false) }
+    BackHandler { if (!busy) onCancel() }
     var name by remember(user.id) { mutableStateOf(user.name) }
     var email by remember(user.id) { mutableStateOf(user.email) }
     var phone by remember(user.id) { mutableStateOf(user.phone) }
@@ -82,7 +91,7 @@ fun EditProfileScreen(
                     .clip(CircleShape)
                     .background(Color.White.copy(alpha = 0.08f))
                     .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape)
-                    .clickable(enabled = !saving) { onCancel() },
+                    .clickable(enabled = !busy) { onCancel() },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -205,7 +214,7 @@ fun EditProfileScreen(
                     }
                 }
             },
-            enabled = !saving,
+            enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -222,7 +231,7 @@ fun EditProfileScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
-                        if (saving) Brush.horizontalGradient(
+                        if (busy) Brush.horizontalGradient(
                             listOf(Color.White.copy(alpha = 0.06f), Color.White.copy(alpha = 0.06f))
                         ) else PinedrawColors.PrimaryGradient
                     ),
@@ -236,7 +245,16 @@ fun EditProfileScreen(
             }
         }
 
-        if (error.isNotEmpty()) {
+        TextButton(
+            onClick = { confirmDelete = true },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.textButtonColors(contentColor = PinedrawColors.Coral)
+        ) {
+            Text(if (deleting) "Deleting profile..." else "Delete Profile")
+        }
+
+        if (error.isNotEmpty() && !busy) {
             Spacer(Modifier.height(10.dp))
             Text(
                 text = "Fix 1 field to save",
@@ -248,6 +266,26 @@ fun EditProfileScreen(
             )
         }
     }
+
+    if (confirmDelete) AlertDialog(
+        onDismissRequest = { confirmDelete = false },
+        title = { Text("Delete your profile?") },
+        text = { Text("This is permanent. You will be removed from all waiting lists, and your active reservations will be cancelled.") },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        confirmButton = {
+            Button(
+                onClick = {
+                    confirmDelete = false
+                    onDelete()
+                },
+                enabled = !busy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PinedrawColors.Coral,
+                    contentColor = PinedrawColors.Ink
+                )
+            ) { Text("Delete Profile") }
+        }
+    )
 }
 
 // Shows a profile input and its validation message.

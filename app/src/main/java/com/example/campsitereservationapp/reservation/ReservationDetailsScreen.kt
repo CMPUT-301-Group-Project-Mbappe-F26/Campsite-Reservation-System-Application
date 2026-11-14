@@ -43,7 +43,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * @param onBack Returns to My Reservations.
  */
 @Composable
-fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit) {
+fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit, onOpenMessages: () -> Unit = {}) {
     val reservationService = remember { ReservationService() }
     val campsiteService = remember { CampsiteService() }
     val entrantId = rememberCampsiteOwnerId()
@@ -100,7 +100,7 @@ fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit) {
                 Text(error, color = PinedrawColors.Coral)
                 TextButton(onClick = { refresh++ }) { Text("Try again") }
             }
-            else -> reservation?.let { ReservationDetailsContent(it, campsite) }
+            else -> reservation?.let { ReservationDetailsContent(it, campsite, onOpenMessages) }
         }
     }
 }
@@ -112,7 +112,7 @@ fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit) {
  * @param site The reserved campsite, or null if it could not be loaded; its location and rules are then skipped.
  */
 @Composable
-fun ReservationDetailsContent(booking: Reservation, site: Campsite?) {
+fun ReservationDetailsContent(booking: Reservation, site: Campsite?, onOpenMessages: (() -> Unit)? = null) {
     Column(Modifier.verticalScroll(rememberScrollState())) {
         CampsitePhoto(site?.imageUrls?.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -120,6 +120,11 @@ fun ReservationDetailsContent(booking: Reservation, site: Campsite?) {
             Surface(color = PinedrawColors.Lime.copy(alpha = 0.15f), shape = MaterialTheme.shapes.large) {
                 Text(booking.status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     color = PinedrawColors.Lime, fontWeight = FontWeight.Bold)
+            }
+            if (onOpenMessages != null) {
+                OutlinedButton(onClick = onOpenMessages, modifier = Modifier.fillMaxWidth()) {
+                    Text("Message campsite owner")
+                }
             }
             ReservationCard {
                 ReservationRow("Check-in", formatReservationDate(booking.checkInDate))
