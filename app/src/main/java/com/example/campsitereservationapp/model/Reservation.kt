@@ -9,7 +9,8 @@ import java.util.TimeZone
 
 /*
  * The Reservation model and the booking rules for reserving a campsite won in a lottery
- * (US 01.04.01, US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01).
+ * (US 01.04.01, US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01), and the filters an owner
+ * uses to view a campsite's reservations (US 02.07.01, US 02.07.02, US 02.07.03).
  *
  * The functions here do no database work, so the screens, ReservationService and unit
  * tests all share the same rules.
@@ -55,11 +56,11 @@ data class Reservation(
 )
 
 /**
- * Keeps confirmed stays that have not ended, soonest first.
+ * Keeps confirmed stays that have not ended, soonest first (US 01.06.01, US 02.07.01).
  *
  * A stay checking out today still counts as active. yyyy-MM-dd text sorts in date order.
  *
- * @param reservations An entrant's reservations.
+ * @param reservations Reservations for an entrant or a campsite.
  * @param today Today's date as yyyy-MM-dd.
  * @return The active reservations, sorted by check-in date.
  */
@@ -69,18 +70,29 @@ fun activeReservations(reservations: List<Reservation>, today: String): List<Res
         .sortedBy { it.checkInDate }
 
 /**
- * Keeps confirmed stays that have already ended, most recent first (US 01.06.02).
+ * Keeps confirmed stays that have already ended, most recent first (US 01.06.02, US 02.07.02).
  *
  * A stay checking out today is still active, so it becomes past the next day. Cancelled
  * reservations are left out because the entrant never stayed.
  *
- * @param reservations An entrant's reservations.
+ * @param reservations Reservations for an entrant or a campsite.
  * @param today Today's date as yyyy-MM-dd.
  * @return The past reservations, latest check-in first.
  */
 fun pastReservations(reservations: List<Reservation>, today: String): List<Reservation> =
     reservations
         .filter { it.status == RESERVATION_CONFIRMED && it.checkOutDate < today }
+        .sortedByDescending { it.checkInDate }
+
+/**
+ * Keeps cancelled reservations, latest check-in first (US 02.07.03).
+ *
+ * @param reservations Reservations for an entrant or a campsite.
+ * @return The cancelled reservations, latest check-in first.
+ */
+fun cancelledReservations(reservations: List<Reservation>): List<Reservation> =
+    reservations
+        .filter { it.status == RESERVATION_CANCELLED }
         .sortedByDescending { it.checkInDate }
 
 /**
