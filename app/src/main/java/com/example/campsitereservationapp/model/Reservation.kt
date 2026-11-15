@@ -9,7 +9,7 @@ import java.util.TimeZone
 
 /*
  * The Reservation model and the booking rules for reserving a campsite won in a lottery
- * (US 01.04.01, US 01.04.03, US 01.06.01).
+ * (US 01.04.01, US 01.04.03, US 01.06.01, US 01.06.02).
  *
  * The functions here do no database work, so the screens, ReservationService and unit
  * tests all share the same rules.
@@ -61,6 +61,21 @@ fun activeReservations(reservations: List<Reservation>, today: String): List<Res
     reservations
         .filter { it.status == RESERVATION_CONFIRMED && it.checkOutDate >= today }
         .sortedBy { it.checkInDate }
+
+/**
+ * Keeps confirmed stays that have already ended, most recent first (US 01.06.02).
+ *
+ * A stay checking out today is still active, so it becomes past the next day. Cancelled
+ * reservations are left out because the entrant never stayed.
+ *
+ * @param reservations An entrant's reservations.
+ * @param today Today's date as yyyy-MM-dd.
+ * @return The past reservations, latest check-in first.
+ */
+fun pastReservations(reservations: List<Reservation>, today: String): List<Reservation> =
+    reservations
+        .filter { it.status == RESERVATION_CONFIRMED && it.checkOutDate < today }
+        .sortedByDescending { it.checkInDate }
 
 /**
  * Gets today's date in the format used by reservations.
