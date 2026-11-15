@@ -9,18 +9,24 @@ import java.util.TimeZone
 
 /*
  * The Reservation model and the booking rules for reserving a campsite won in a lottery
- * (US 01.04.01, US 01.04.03, US 01.06.01, US 01.06.02).
+ * (US 01.04.01, US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01).
  *
  * The functions here do no database work, so the screens, ReservationService and unit
  * tests all share the same rules.
  *
- * Profile deletion cancels active reservations. The separate cancellation flow
- * (US 01.07.01) is still outstanding. Dates use the device's time zone.
+ * Outstanding issues: cancelling does not yet notify the entrant (US 01.07.02), and
+ * cancellation policies are shown but not enforced because the app takes no payments.
+ * Dates use the device's time zone.
  */
 
 /** Status of a reservation that is booked and counts toward its lottery's capacity. */
 const val RESERVATION_CONFIRMED = "Confirmed"
+
+/** Status of a reservation the entrant cancelled; its nights and spot are free again. */
 const val RESERVATION_CANCELLED = "Cancelled"
+
+/** Label shown for a confirmed stay that has already ended. It is never stored. */
+const val RESERVATION_COMPLETED = "Completed"
 
 /**
  * An entrant's booking of a campsite, stored at `reservations/{id}` in Firestore and
@@ -76,6 +82,39 @@ fun pastReservations(reservations: List<Reservation>, today: String): List<Reser
     reservations
         .filter { it.status == RESERVATION_CONFIRMED && it.checkOutDate < today }
         .sortedByDescending { it.checkInDate }
+
+/**
+ * Checks whether an entrant can cancel a reservation (US 01.07.01).
+ *
+ * Only the entrant who booked can cancel, and only before the stay starts. On the
+ * check-in day the stay has started, so it can no longer be cancelled.
+ *
+ * @param reservation The reservation to cancel.
+ * @param entrantId Firebase UID of the signed-in entrant.
+ * @param today Today's date as yyyy-MM-dd.
+ * @return A message suitable for display, or null if the reservation can be cancelled.
+ */
+fun cancelError(reservation: Reservation, entrantId: String, today: String): String? = when {
+    reservation.entrantId != entrantId -> "This reservation does not belong to your account."
+    reservation.status == RESERVATION_CANCELLED -> "This reservation is already cancelled."
+    reservation.status != RESERVATION_CONFIRMED -> "This reservation cannot be cancelled."
+    reservation.checkInDate <= today -> "Your stay has already started, so it can no longer be cancelled."
+    else -> null
+}
+
+/**
+ * Gets the status to show for a reservation.
+ *
+ * A confirmed stay that has ended shows as [RESERVATION_COMPLETED], since the stored status
+ * stays [RESERVATION_CONFIRMED].
+ *
+ * @param reservation The reservation to describe.
+ * @param today Today's date as yyyy-MM-dd.
+ * @return The stored status, or [RESERVATION_COMPLETED] for a finished stay.
+ */
+fun reservationStatusLabel(reservation: Reservation, today: String): String =
+    if (reservation.status == RESERVATION_CONFIRMED && reservation.checkOutDate < today) RESERVATION_COMPLETED
+    else reservation.status
 
 /**
  * Gets today's date in the format used by reservations.
