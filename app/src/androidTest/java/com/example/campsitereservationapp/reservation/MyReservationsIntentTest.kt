@@ -13,7 +13,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /*
- * Intent tests for US 01.06.01: an entrant views their active reservations and opens one.
+ * Intent tests for US 01.06.01 and US 01.06.02: an entrant views their active and past
+ * reservations and opens one.
  * The screens are given sample reservations directly, so no Firebase data is needed.
  */
 @RunWith(AndroidJUnit4::class)
@@ -32,14 +33,58 @@ class MyReservationsIntentTest {
         checkInDate = "2027-08-14", checkOutDate = "2027-08-16"
     )
 
+    private val tunnelMountain = twoJack.copy(
+        id = "res-tunnel-mountain", campsiteId = "site-tunnel-mountain", campsiteName = "Tunnel Mountain Village",
+        checkInDate = "2026-08-14", checkOutDate = "2026-08-16"
+    )
+
     private fun showList(
         reservations: List<Reservation>,
         wins: List<Pair<String, String>> = emptyList(),
         onReservationClick: (String) -> Unit = {},
-        onReserveClick: (String) -> Unit = {}
+        onReserveClick: (String) -> Unit = {},
+        past: List<Reservation> = emptyList()
     ) = composeRule.setContent {
         MyReservationsContent(wins, reservations, loading = false, error = "", onRetry = {},
-            onReservationClick = onReservationClick, onReserveClick = onReserveClick)
+            onReservationClick = onReservationClick, onReserveClick = onReserveClick, past = past)
+    }
+
+    // US 01.06.02: an entrant views their past reservations.
+
+    @Test
+    fun entrantSeesPastStaysUnderThePastTab() {
+        showList(listOf(twoJack), past = listOf(tunnelMountain))
+        composeRule.onNodeWithText("Tunnel Mountain Village").assertDoesNotExist()
+        composeRule.onNodeWithText("Past").performClick()
+        composeRule.onNodeWithText("Tunnel Mountain Village").assertIsDisplayed()
+        composeRule.onNodeWithText("Aug 14, 2026 – Aug 16, 2026").assertIsDisplayed()
+        composeRule.onNodeWithText("Completed").assertIsDisplayed()
+        composeRule.onNodeWithText("Two Jack Lakeside").assertDoesNotExist()
+    }
+
+    @Test
+    fun tappingAPastStayOpensItsDetails() {
+        var opened: String? = null
+        showList(emptyList(), onReservationClick = { opened = it }, past = listOf(tunnelMountain))
+        composeRule.onNodeWithText("Past").performClick()
+        composeRule.onNodeWithText("Tunnel Mountain Village").performClick()
+        assertEquals("res-tunnel-mountain", opened)
+    }
+
+    @Test
+    fun entrantIsToldWhenTheyHaveNoPastStays() {
+        showList(listOf(twoJack))
+        composeRule.onNodeWithText("Past").performClick()
+        composeRule.onNodeWithText("No past reservations").assertIsDisplayed()
+    }
+
+    @Test
+    fun unusedWinIsOnlyShownUnderUpcoming() {
+        showList(emptyList(), wins = listOf("lottery-summer" to "Two Jack Lakeside"), past = listOf(tunnelMountain))
+        composeRule.onNodeWithText("Past").performClick()
+        composeRule.onNodeWithText("You won a spot").assertDoesNotExist()
+        composeRule.onNodeWithText("Upcoming").performClick()
+        composeRule.onNodeWithText("You won a spot").assertIsDisplayed()
     }
 
     @Test

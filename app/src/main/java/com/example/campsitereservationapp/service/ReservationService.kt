@@ -13,7 +13,7 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * Handles an entrant's reservations and lottery wins in Firestore (US 01.04.01,
- * US 01.04.03, US 01.06.01).
+ * US 01.04.03, US 01.06.01, US 01.06.02).
  *
  * Reservations are stored at `reservations/{id}`, and each is also copied into its
  * lottery's `booked` list. Booking and declining run in transactions and use the rules
@@ -27,22 +27,33 @@ class ReservationService {
     private val auth = FirebaseAuth.getInstance()
 
     /**
-     * Loads the signed-in entrant's active reservations.
+     * Loads all of the signed-in entrant's reservations, whatever their status or dates.
      *
-     * @return Confirmed stays that have not ended, soonest first (see [activeReservations]).
+     * Screens split the result with [activeReservations] and [pastReservations], so one
+     * read fills both lists.
+     *
+     * @return Every reservation the entrant has made, in no particular order.
      * @throws Exception If no user is signed in.
      */
-    suspend fun getMyActiveReservations(): List<Reservation> {
+    suspend fun getMyReservations(): List<Reservation> {
         val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
         val result = db.collection("reservations")
             .whereEqualTo("entrantId", uid) // Get this entrant's reservations
             .get().await()
         check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
-        val reservations = result.documents.mapNotNull { doc ->
+        return result.documents.mapNotNull { doc ->
             doc.toObject(Reservation::class.java)?.copy(id = doc.id) // Use the actual Firestore document ID.
         }
-        return activeReservations(reservations, reservationDateToday())
     }
+
+    /**
+     * Loads the signed-in entrant's active reservations.
+     *
+     * @return Confirmed stays that have not ended, soonest first (see [activeReservations]).
+     * @throws Exception If no user is signed in.
+     */
+    suspend fun getMyActiveReservations(): List<Reservation> =
+        activeReservations(getMyReservations(), reservationDateToday())
 
     /**
      * Loads one reservation.
