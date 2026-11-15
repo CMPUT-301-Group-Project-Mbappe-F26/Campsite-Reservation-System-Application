@@ -3,7 +3,9 @@ package com.example.campsitereservationapp.service
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.Reservation
+import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
 import com.example.campsitereservationapp.model.activeReservations
+import com.example.campsitereservationapp.model.cancelError
 import com.example.campsitereservationapp.model.declineError
 import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.model.reservationError
@@ -13,14 +15,14 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * Handles an entrant's reservations and lottery wins in Firestore (US 01.04.01,
- * US 01.04.03, US 01.06.01, US 01.06.02).
+ * US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01).
  *
  * Reservations are stored at `reservations/{id}`, and each is also copied into its
- * lottery's `booked` list. Booking and declining run in transactions and use the rules
- * in Reservation.kt, so the screens and the database always agree.
+ * lottery's `booked` list. Booking, declining and cancelling run in transactions and use
+ * the rules in Reservation.kt, so the screens and the database always agree.
  *
- * Outstanding issues: declining a spot does not yet trigger a redraw for the next
- * entrant (US 02.05.01), and reservations cannot be cancelled yet (US 01.07.01).
+ * Outstanding issues: declining or cancelling does not yet trigger a redraw for the next
+ * entrant (US 02.05.01), and cancelling sends no notification yet (US 01.07.02).
  */
 class ReservationService {
     private val db = FirebaseFirestore.getInstance()
@@ -155,5 +157,37 @@ class ReservationService {
             transaction.update(lotteryDoc, "pending", lottery.pending - uid)
             null
         }.await()
+    }
+
+    /**
+     * Cancels one of the signed-in entrant's reservations (US 01.07.01).
+     *
+     * The reservation's status becomes Cancelled, and the entrant is added to the lottery's
+     * `cancelledEntrantIds`, which frees their nights and their spot toward capacity (see
+     * confirmedReservations). This is the same way profile deletion releases bookings, so
+     * the lottery's `booked` list is never rewritten by an entrant.
+     *
+     * @param reservationId Firestore document ID of the reservation.
+     * @return A message explaining why it could not be cancelled, or null on success.
+     * @throws Exception If no user is signed in.
+     */
+    suspend fun cancel(reservationId: String): String? {
+        val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
+        val reservationDoc = db.collection("reservations").document(reservationId)
+        return db.runTransaction { transaction ->
+            val reservation = transaction.get(reservationDoc).toObject(Reservation::class.java)
+                ?: return@runTransaction "This reservation no longer exists."
+            val lotteryDoc = reservation.lotteryId.takeIf { it.isNotBlank() }
+                ?.let { db.collection("lotteries").document(it) }
+            val lottery = lotteryDoc?.let { transaction.get(it).toObject(Lottery::class.java) }
+            val error = cancelError(reservation, uid, reservationDateToday())
+            if (error != null) return@runTransaction error
+            transaction.update(reservationDoc, "status", RESERVATION_CANCELLED)
+            if (lotteryDoc != null && lottery != null && uid !in lottery.cancelledEntrantIds) {
+                transaction.update(lotteryDoc, "cancelledEntrantIds", lottery.cancelledEntrantIds + uid)
+            }
+            null
+        }.await()
+        // US 01.07.02: send the cancellation notification here (on success) once it exists.
     }
 }
