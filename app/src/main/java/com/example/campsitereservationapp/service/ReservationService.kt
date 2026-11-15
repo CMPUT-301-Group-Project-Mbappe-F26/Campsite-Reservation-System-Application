@@ -15,7 +15,8 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * Handles an entrant's reservations and lottery wins in Firestore (US 01.04.01,
- * US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01).
+ * US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01), and lets an owner load their
+ * campsite's reservations (US 02.07.01, US 02.07.02, US 02.07.03).
  *
  * Reservations are stored at `reservations/{id}`, and each is also copied into its
  * lottery's `booked` list. Booking, declining and cancelling run in transactions and use
@@ -45,6 +46,24 @@ class ReservationService {
         check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
         return result.documents.mapNotNull { doc ->
             doc.toObject(Reservation::class.java)?.copy(id = doc.id) // Use the actual Firestore document ID.
+        }
+    }
+
+    /**
+     * Loads every reservation made at one campsite, for its owner (US 02.07.01 to US 02.07.03).
+     *
+     * Firestore rules only allow this for the campsite's owner. Screens split the result with
+     * [activeReservations], [pastReservations] and [cancelledReservations].
+     *
+     * @param campsiteId Firestore document ID of the campsite.
+     * @return The campsite's reservations, in no particular order.
+     */
+    suspend fun getCampsiteReservations(campsiteId: String): List<Reservation> {
+        val result = db.collection("reservations")
+            .whereEqualTo("campsiteId", campsiteId)
+            .get().await()
+        return result.documents.mapNotNull { doc ->
+            doc.toObject(Reservation::class.java)?.copy(id = doc.id)
         }
     }
 
