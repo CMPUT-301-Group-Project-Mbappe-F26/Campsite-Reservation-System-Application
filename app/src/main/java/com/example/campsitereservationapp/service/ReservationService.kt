@@ -4,9 +4,11 @@ import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
+import com.example.campsitereservationapp.model.RESERVATION_REJECTED
 import com.example.campsitereservationapp.model.activeReservations
 import com.example.campsitereservationapp.model.cancelError
 import com.example.campsitereservationapp.model.declineError
+import com.example.campsitereservationapp.model.rejectError
 import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.model.reservationError
 import com.google.firebase.auth.FirebaseAuth
@@ -15,15 +17,15 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * Handles an entrant's reservations and lottery wins in Firestore (US 01.04.01,
- * US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01), and lets an owner load their
- * campsite's reservations (US 02.07.01, US 02.07.02, US 02.07.03).
+ * US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01), and lets an owner load and reject
+ * their campsite's reservations (US 02.07.01, US 02.07.02, US 02.07.03, US 02.08.01).
  *
  * Reservations are stored at `reservations/{id}`, and each is also copied into its
- * lottery's `booked` list. Booking, declining and cancelling run in transactions and use
- * the rules in Reservation.kt, so the screens and the database always agree.
+ * lottery's `booked` list. Booking, declining, cancelling and rejecting run in transactions
+ * and use the rules in Reservation.kt, so the screens and the database always agree.
  *
- * Outstanding issues: declining or cancelling does not yet trigger a redraw for the next
- * entrant (US 02.05.01), and cancelling sends no notification yet (US 01.07.02).
+ * Outstanding issues: declining, cancelling or rejecting does not yet trigger a redraw for
+ * the next entrant (US 02.05.01) or send a notification (US 01.07.02).
  */
 class ReservationService {
     private val db = FirebaseFirestore.getInstance()
@@ -208,5 +210,40 @@ class ReservationService {
             null
         }.await()
         // US 01.07.02: send the cancellation notification here (on success) once it exists.
+    }
+
+    /**
+     * Rejects a reservation at one of the signed-in owner's campsites (US 02.08.01).
+     *
+     * The reservation's status becomes Rejected, and the entrant is added to the lottery's
+     * `cancelledEntrantIds`, which frees their nights and their spot in the same way as an
+     * entrant's own cancellation.
+     *
+     * @param reservationId Firestore document ID of the reservation.
+     * @return A message explaining why it could not be rejected, or null on success.
+     * @throws Exception If no user is signed in.
+     */
+    suspend fun reject(reservationId: String): String? {
+        val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
+        val reservationDoc = db.collection("reservations").document(reservationId)
+        return db.runTransaction { transaction ->
+            val reservation = transaction.get(reservationDoc).toObject(Reservation::class.java)
+                ?.copy(id = reservationId)
+                ?: return@runTransaction "This reservation no longer exists."
+            val campsite = transaction.get(db.collection("campsites").document(reservation.campsiteId))
+                .toObject(Campsite::class.java)
+                ?: return@runTransaction "This campsite is no longer available."
+            val lotteryDoc = reservation.lotteryId.takeIf { it.isNotBlank() }
+                ?.let { db.collection("lotteries").document(it) }
+            val lottery = lotteryDoc?.let { transaction.get(it).toObject(Lottery::class.java) }
+            val error = rejectError(reservation, campsite.copy(id = reservation.campsiteId), uid, reservationDateToday())
+            if (error != null) return@runTransaction error
+            transaction.update(reservationDoc, "status", RESERVATION_REJECTED)
+            if (lotteryDoc != null && lottery != null && reservation.entrantId !in lottery.cancelledEntrantIds) {
+                transaction.update(lotteryDoc, "cancelledEntrantIds", lottery.cancelledEntrantIds + reservation.entrantId)
+            }
+            null
+        }.await()
+        // US 01.07.02: notify the entrant that their reservation was rejected (on success) once it exists.
     }
 }

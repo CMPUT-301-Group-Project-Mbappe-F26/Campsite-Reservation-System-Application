@@ -21,6 +21,7 @@ import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
 import com.example.campsitereservationapp.model.RESERVATION_COMPLETED
+import com.example.campsitereservationapp.model.RESERVATION_REJECTED
 import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.cancelError
 import com.example.campsitereservationapp.model.formatReservationDate
@@ -175,7 +176,7 @@ fun ReservationDetailsContent(
     var confirming by rememberSaveable { mutableStateOf(false) }
     val status = reservationStatusLabel(booking, today)
     val statusColor = when (status) {
-        RESERVATION_CANCELLED -> PinedrawColors.Coral
+        RESERVATION_CANCELLED, RESERVATION_REJECTED -> PinedrawColors.Coral
         RESERVATION_COMPLETED -> PinedrawColors.TextMuted
         else -> PinedrawColors.Lime
     }

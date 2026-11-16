@@ -1,13 +1,16 @@
 package com.example.campsitereservationapp.campsite
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.campsitereservationapp.model.RESERVATION_REJECTED
 import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.model.activeReservations
@@ -18,19 +21,22 @@ import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /*
  * Shows a campsite owner the reservations made at their campsite, filtered into active
- * (US 02.07.01), past (US 02.07.02) and cancelled (US 02.07.03) stays.
+ * (US 02.07.01), past (US 02.07.02) and cancelled (US 02.07.03) stays, and lets the owner
+ * reject an active reservation (US 02.08.01).
  *
  * [CampsiteReservationsSection] loads the data and is shown on the owner's view of
  * [CampsiteDetailsScreen]. [CampsiteReservationList] only draws the lists, so intent tests
  * can check it without Firebase.
  *
- * Outstanding issues: the list loads once and does not update live, and owners cannot
- * reject a reservation from it yet (US 02.08.01).
+ * Outstanding issues: the list loads once and does not update live, and the entrant is
+ * not notified when their reservation is rejected (US 01.07.02).
  */
 
 /**
@@ -85,15 +91,38 @@ fun campsiteBookings(reservations: List<Reservation>, users: List<User>, today: 
     )
 }
 
-// Loads the campsite's reservations and the entrants who made them.
+// Loads the campsite's reservations and the entrants who made them, and rejects one when asked.
 @Composable
 fun CampsiteReservationsSection(campsiteId: String) {
     val reservationService = remember { ReservationService() }
     val userService = remember { UserService() }
+    val scope = rememberCoroutineScope()
     var bookings by remember(campsiteId) { mutableStateOf(CampsiteBookings()) }
     var loading by remember(campsiteId) { mutableStateOf(true) }
     var error by remember(campsiteId) { mutableStateOf("") }
+    var rejectingId by remember(campsiteId) { mutableStateOf<String?>(null) }
+    var rejectMessage by remember(campsiteId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
+
+    // Rejects the reservation, then reloads so it moves from Active to Cancelled.
+    fun reject(booking: CampsiteBooking) {
+        scope.launch {
+            rejectingId = booking.reservation.id
+            rejectMessage = ""
+            try {
+                val problem = reservationService.reject(booking.reservation.id)
+                rejectMessage = problem ?: "${booking.entrantName}'s reservation was rejected."
+                if (problem == null) refresh++
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("CampsiteReservations", "Could not reject reservation ${booking.reservation.id}", e)
+                rejectMessage = "Could not reject this reservation. Check your connection and try again."
+            } finally {
+                rejectingId = null
+            }
+        }
+    }
 
     LaunchedEffect(campsiteId, refresh) {
         loading = true
@@ -120,7 +149,7 @@ fun CampsiteReservationsSection(campsiteId: String) {
             Text(error, color = PinedrawColors.Coral)
             TextButton(onClick = { refresh++ }) { Text("Try again") }
         }
-        else -> CampsiteReservationList(bookings)
+        else -> CampsiteReservationList(bookings, onReject = ::reject, rejectingId = rejectingId, message = rejectMessage)
     }
 }
 
@@ -128,13 +157,24 @@ fun CampsiteReservationsSection(campsiteId: String) {
  * Shows a campsite's reservations with Active, Past and Cancelled filters.
  *
  * Active is selected first. Each filter shows how many reservations it holds, and a
- * message when it is empty.
+ * message when it is empty. When [onReject] is given, each active reservation has a Reject
+ * button that asks the owner to confirm first. Rejected reservations are listed under
+ * Cancelled and marked as rejected.
  *
  * @param bookings The campsite's reservations, already split by [campsiteBookings].
+ * @param onReject Rejects a reservation after the owner confirms, or null to hide Reject.
+ * @param rejectingId ID of the reservation being rejected, whose button is disabled meanwhile.
+ * @param message Result of the last reject attempt, or blank.
  */
 @Composable
-fun CampsiteReservationList(bookings: CampsiteBookings) {
+fun CampsiteReservationList(
+    bookings: CampsiteBookings,
+    onReject: ((CampsiteBooking) -> Unit)? = null,
+    rejectingId: String? = null,
+    message: String = ""
+) {
     var filter by rememberSaveable { mutableStateOf("Active") }
+    var confirming by remember { mutableStateOf<CampsiteBooking?>(null) }
     val shown = when (filter) {
         "Past" -> bookings.past
         "Cancelled" -> bookings.cancelled
@@ -165,15 +205,52 @@ fun CampsiteReservationList(bookings: CampsiteBookings) {
                 color = PinedrawColors.TextSecondary
             )
             shown.forEach { booking ->
-                Column(Modifier.fillMaxWidth()) {
-                    Text(booking.entrantName, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "${formatReservationDate(booking.reservation.checkInDate)} – " +
-                            formatReservationDate(booking.reservation.checkOutDate),
-                        color = PinedrawColors.TextSecondary, style = MaterialTheme.typography.bodySmall
-                    )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(booking.entrantName, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "${formatReservationDate(booking.reservation.checkInDate)} – " +
+                                formatReservationDate(booking.reservation.checkOutDate),
+                            color = PinedrawColors.TextSecondary, style = MaterialTheme.typography.bodySmall
+                        )
+                        if (filter == "Cancelled") Text(
+                            if (booking.reservation.status == RESERVATION_REJECTED) "Rejected by you" else "Cancelled by entrant",
+                            color = PinedrawColors.Coral, style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    if (filter == "Active" && onReject != null) TextButton(
+                        onClick = { confirming = booking }, enabled = rejectingId == null
+                    ) {
+                        Text(
+                            if (rejectingId == booking.reservation.id) "Rejecting…" else "Reject",
+                            color = if (rejectingId == null) PinedrawColors.Coral else PinedrawColors.TextMuted
+                        )
+                    }
                 }
             }
+            if (message.isNotEmpty()) Text(message, color = PinedrawColors.TextSecondary)
         }
+    }
+
+    confirming?.let { booking ->
+        AlertDialog(
+            onDismissRequest = { confirming = null },
+            title = { Text("Reject ${booking.entrantName}'s reservation?") },
+            text = {
+                Text(
+                    "Their stay from ${formatReservationDate(booking.reservation.checkInDate)} to " +
+                        "${formatReservationDate(booking.reservation.checkOutDate)} will be cancelled and the " +
+                        "dates released to other entrants. This cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirming = null; onReject?.invoke(booking) }) {
+                    Text("Yes, reject", color = PinedrawColors.Coral)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = null }) { Text("Keep reservation") }
+            }
+        )
     }
 }
