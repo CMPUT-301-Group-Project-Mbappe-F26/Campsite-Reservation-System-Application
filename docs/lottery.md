@@ -116,6 +116,36 @@ the Firestore transaction. Cancelling the form does not save a lottery.
 
 ## Date and participant semantics
 
+### Winner campsite selection (US 01.04.02)
+
+Winners of shared lotteries see a campsite list before any date picker. They select
+one campsite and choose **Choose dates** to continue through the existing date and
+rules-confirmation flow. **Change campsite** returns to the list and discards the
+previous campsite's date selection and rule acceptance. Single-campsite lotteries
+continue directly to their calendar when dates are available.
+
+All offered campsites remain visible. Missing, unpublished, transferred, undersized,
+or fully booked campsites are disabled with an explanation. A selectable campsite
+must have at least one open night within the offered stay, current season, open
+weekdays, and dates that have not passed. Checkout is exclusive, so a single open
+night is enough even when checkout falls outside the campsite's season.
+
+Availability includes confirmed nights from every related lottery, excluding cancelled,
+rejected, and released reservations. The picker uses this same occupied-night snapshot.
+**Refresh** reloads availability; winners can decline even when every offering is disabled.
+Submission rechecks eligibility, the latest campsite, and occupied nights. Related
+lottery documents discovered at submission are read again within the booking transaction
+so concurrent bookings or cancellations in those lotteries trigger transaction retries.
+This reads existing lottery documents rather than other entrants' private reservation
+documents and needs no new Firestore permissions or collections.
+
+`LotteryReservationSelection.kt` contains pure eligibility and availability rules.
+`ReserveViewModel` coordinates loading and actions through `ReservationService`.
+`LotteryCampsiteSelection.kt` and `ReserveScreen.kt` render state and invoke callbacks;
+they do not perform Firebase operations directly.
+
+### Dates
+
 Registration and booking windows start at 00:00 and end at 23:59 (11:59 PM) on the
 selected Alberta date. From November 1, 2026, Alberta Time is permanently UTC-6;
 earlier dates follow historical `America/Edmonton` daylight saving rules. Both draw

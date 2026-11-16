@@ -261,9 +261,10 @@ fun confirmedReservations(lottery: Lottery): List<Reservation> =
  * @param night The night as yyyy-MM-dd.
  * @param lottery The lottery being reserved from.
  * @param campsite The campsite being reserved.
+ * @param blockedNights Optional occupied-night snapshot spanning every lottery for this campsite.
  * @return True if the night is open.
  */
-fun isNightOpen(night: String, lottery: Lottery, campsite: Campsite): Boolean {
+fun isNightOpen(night: String, lottery: Lottery, campsite: Campsite, blockedNights: Set<String>? = null): Boolean {
     if (night < lottery.stayStartDate || night >= lottery.stayEndDate) return false
     if (campsite.availableFrom.isNotBlank() && night < campsite.availableFrom) return false
     if (campsite.availableUntil.isNotBlank() && night > campsite.availableUntil) return false
@@ -272,6 +273,7 @@ fun isNightOpen(night: String, lottery: Lottery, campsite: Campsite): Boolean {
         .get(Calendar.DAY_OF_WEEK)
     val day = (calendarDay + 5) % 7 + 1 // Campsites use Monday = 1 through Sunday = 7.
     if (campsite.availableDays.isNotEmpty() && day !in campsite.availableDays) return false
+    if (blockedNights != null) return night !in blockedNights
     return confirmedReservations(lottery).none {
         it.campsiteId.ifBlank { lottery.campsiteId } == campsite.id.ifBlank { lottery.campsiteId } &&
             night in reservationNights(it.checkInDate, it.checkOutDate)

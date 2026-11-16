@@ -12,9 +12,18 @@ import com.example.campsitereservationapp.model.rejectError
 import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.model.reservationError
 import com.example.campsitereservationapp.model.offeredCampsiteIds
+import com.example.campsitereservationapp.model.LotteryReservationSelection
+import com.example.campsitereservationapp.model.occupiedCampsiteNights
+import com.example.campsitereservationapp.model.reservationCampsiteChoice
+import com.example.campsitereservationapp.model.reservationCampsiteError
+import com.example.campsitereservationapp.model.reservationNights
+import com.example.campsitereservationapp.model.isNightOpen
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
  * Handles an entrant's reservations and lottery wins in Firestore (US 01.04.01,
@@ -35,7 +44,7 @@ class ReservationService {
     /**
      * Loads all of the signed-in entrant's reservations, whatever their status or dates.
      *
-     * Screens split the result with [activeReservations] and [pastReservations], so one
+     * Screens split the result with [activeReservations] and [com.example.campsitereservationapp.model.pastReservations], so one
      * read fills both lists.
      *
      * @return Every reservation the entrant has made, in no particular order.
@@ -56,7 +65,8 @@ class ReservationService {
      * Loads every reservation made at one campsite, for its owner (US 02.07.01 to US 02.07.03).
      *
      * Firestore rules only allow this for the campsite's owner. Screens split the result with
-     * [activeReservations], [pastReservations] and [cancelledReservations].
+     * [activeReservations], [com.example.campsitereservationapp.model.pastReservations] and
+     * [com.example.campsitereservationapp.model.cancelledReservations].
      *
      * @param campsiteId Firestore document ID of the campsite.
      * @return The campsite's reservations, in no particular order.
@@ -123,6 +133,30 @@ class ReservationService {
     }
 
     /**
+     * Loads every campsite offered to this winner and the nights occupied across its lotteries.
+     * Removed campsites remain visible as disabled choices. Uses readable lottery documents,
+     * rather than requesting other entrants' private reservation documents.
+     */
+    suspend fun getReservationSelection(lotteryId: String): LotteryReservationSelection {
+        require(lotteryId.isNotBlank() && '/' !in lotteryId) { "Provide a valid lottery ID." }
+        val uid = auth.currentUser?.uid ?: error("Please sign in to reserve.")
+        val lottery = getLottery(lotteryId) ?: error("This lottery is no longer available.")
+        check(uid in lottery.pending) { "You do not have a spot to reserve in this lottery." }
+        val today = reservationDateToday()
+        val choices = coroutineScope {
+            lottery.offeredCampsiteIds().distinct().map { id -> async {
+                val site = db.collection("campsites").document(id).get().await()
+                    .toObject(Campsite::class.java)?.copy(id = id)
+                val related = LotteryService().getLotteriesForCampsite(id)
+                val occupied = occupiedCampsiteNights(id, related.filterNot { it.id == lottery.id } + lottery)
+                reservationCampsiteChoice(id, site, lottery, uid, occupied, today)
+            } }.awaitAll()
+        }
+        check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+        return LotteryReservationSelection(lottery, choices)
+    }
+
+    /**
      * Books the dates and moves the signed-in entrant from the lottery's pending list to booked.
      *
      * A transaction re-reads the lottery so two winners cannot take the same night or
@@ -138,20 +172,33 @@ class ReservationService {
      */
     suspend fun reserve(lotteryId: String, checkIn: String, checkOut: String, rulesAccepted: Boolean, campsiteId: String? = null): String? {
         val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
+        val selectedId = campsiteId ?: getLottery(lotteryId)?.campsiteId
+            ?: return "This lottery is no longer available."
+        if (selectedId.isBlank() || '/' in selectedId) return "Choose a campsite listed in this lottery."
+        // Re-read these documents in the transaction: another winner booking or cancelling
+        // in a related lottery then causes Firestore to retry against its latest state.
+        val relatedIds = LotteryService().getLotteriesForCampsite(selectedId).map { it.id }.distinct()
         val lotteryDoc = db.collection("lotteries").document(lotteryId)
         val reservationDoc = db.collection("reservations").document()
         return db.runTransaction { transaction ->
-            val lottery = transaction.get(lotteryDoc).toObject(Lottery::class.java)
+            val lottery = transaction.get(lotteryDoc).toObject(Lottery::class.java)?.copy(id = lotteryId)
                 ?: return@runTransaction "This lottery is no longer available."
-            val selectedId = campsiteId ?: lottery.campsiteId
             if (selectedId !in lottery.offeredCampsiteIds()) return@runTransaction "Choose a campsite listed in this lottery."
             val campsiteDoc = db.collection("campsites").document(selectedId)
             val campsite = transaction.get(campsiteDoc).toObject(Campsite::class.java)?.copy(id = selectedId)
                 ?: return@runTransaction "This campsite is no longer available."
-            if ((lottery.registeredGroupSizes[uid] ?: 1) > (campsite.maxOccupancy ?: 0))
-                return@runTransaction "Your party exceeds this campsite's maximum occupancy."
-            val error = reservationError(lottery, campsite, uid, checkIn, checkOut, rulesAccepted, reservationDateToday())
+            val related = relatedIds.filterNot { it == lotteryId }.mapNotNull { id ->
+                transaction.get(db.collection("lotteries").document(id)).toObject(Lottery::class.java)?.copy(id = id)
+            } + lottery
+            check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+            reservationCampsiteError(lottery, campsite, uid)?.let { return@runTransaction it }
+            val today = reservationDateToday()
+            if (checkIn < today) return@runTransaction "Choose dates that have not passed."
+            val error = reservationError(lottery, campsite, uid, checkIn, checkOut, rulesAccepted, today)
             if (error != null) return@runTransaction error
+            val occupied = occupiedCampsiteNights(selectedId, related)
+            if (reservationNights(checkIn, checkOut).any { !isNightOpen(it, lottery, campsite, occupied) })
+                return@runTransaction "Some of these dates are not available. Please choose others."
             val reservation = Reservation(
                 id = reservationDoc.id, entrantId = uid, campsiteId = selectedId, lotteryId = lotteryId,
                 campsiteName = campsite.name, checkInDate = checkIn, checkOutDate = checkOut
