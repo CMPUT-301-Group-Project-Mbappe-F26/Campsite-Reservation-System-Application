@@ -1,6 +1,8 @@
 package com.example.campsitereservationapp.reservation
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,14 +23,12 @@ import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
-import com.example.campsitereservationapp.model.offeredCampsiteIds
 import com.example.campsitereservationapp.model.formatReservationDate
 import com.example.campsitereservationapp.model.isNightOpen
 import com.example.campsitereservationapp.model.reservationDateFromUtcMillis
 import com.example.campsitereservationapp.model.reservationDateToUtcMillis
 import com.example.campsitereservationapp.model.reservationNights
-import com.example.campsitereservationapp.service.CampsiteService
-import com.example.campsitereservationapp.service.ReservationService
+import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -42,13 +42,12 @@ private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
  * to the campsite's rules first when the owner requires it (US 02.11.01), or decline their
  * spot (US 01.04.03).
  *
- * [ReserveScreen] loads the lottery and campsite from Firebase. [ReserveFlow] draws the
- * date picker, review step and decline dialog, and receives reserve and decline as
- * functions, so intent tests can run it without Firebase.
+ * [ReserveViewModel] loads eligibility and availability. [LotteryReservationFlow] lets
+ * multi-campsite winners choose an available campsite before [ReserveFlow] presents its
+ * dates and rules. The views receive actions as callbacks so they can be tested without Firebase.
  *
  * Outstanding issues: declining does not yet redraw the spot for the next entrant
- * (US 02.05.01), and the winning-lottery notification that should open this screen
- * (US 01.03.01) is not built yet; it is opened from My Reservations for now.
+ * (US 02.05.01). Notifications and My Reservations can open this screen.
  */
 
 /**
@@ -60,84 +59,29 @@ private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
  */
 @Composable
 fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit) {
-    val reservationService = remember { ReservationService() }
-    val campsiteService = remember { CampsiteService() }
     val entrantId = rememberCampsiteOwnerId()
-    var lottery by remember(lotteryId, entrantId) { mutableStateOf<Lottery?>(null) }
-    var campsite by remember(lotteryId, entrantId) { mutableStateOf<Campsite?>(null) }
-    var offeredCampsites by remember(lotteryId, entrantId) { mutableStateOf<List<Campsite>>(emptyList()) }
-    var loading by remember(lotteryId, entrantId) { mutableStateOf(true) }
-    var error by remember(lotteryId, entrantId) { mutableStateOf("") }
-    var refresh by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(lotteryId, entrantId, refresh) {
-        loading = true
-        error = ""
-        lottery = null
-        campsite = null
-        try {
-            check(entrantId != null) { "Not signed in" }
-            val result = withTimeoutOrNull(20000) {
-                val found = reservationService.getLottery(lotteryId)
-                found to found?.offeredCampsiteIds()?.mapNotNull { campsiteService.getCampsite(it) }.orEmpty()
-            }
-            if (result?.first == null || result.second.isEmpty()) error = "This lottery is unavailable or could not be loaded. Please try again."
-            else if (entrantId !in result.first!!.pending) error = "You do not have a spot to reserve in this lottery."
-            else {
-                lottery = result.first
-                offeredCampsites = result.second.filter {
-                    (it.maxOccupancy ?: 0) >= (result.first!!.registeredGroupSizes[entrantId] ?: 1)
-                }
-                campsite = offeredCampsites.firstOrNull()
-                if (campsite == null) error = "None of the listed campsites can accommodate your party."
-            }
-        } catch (_: Exception) {
-            coroutineContext.ensureActive() // Stop normally when leaving the screen.
-            error = "Could not load this lottery. Please try again."
-        } finally {
-            loading = false
-        }
-    }
+    val controller: ReserveViewModel = viewModel(key = "reserve-$lotteryId-$entrantId")
+    LaunchedEffect(lotteryId, entrantId) { controller.load(lotteryId) }
 
     Column(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
             .statusBarsPadding().navigationBarsPadding()
     ) {
-        val loadedLottery = lottery
-        val loadedCampsite = campsite
+        val selection = controller.selection
         when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            controller.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = PinedrawColors.Lime)
             }
-            loadedLottery == null || loadedCampsite == null -> Column {
+            selection == null -> Column {
                 ReserveBackButton(onBack)
                 Column(Modifier.padding(24.dp)) {
-                    Text(error, color = PinedrawColors.Coral)
-                    TextButton(onClick = { refresh++ }) { Text("Try again") }
+                    Text(controller.error, color = PinedrawColors.Coral)
+                    TextButton(onClick = { controller.load(lotteryId) }) { Text("Try again") }
                 }
             }
-            else -> {
-                if (offeredCampsites.size > 1) {
-                    var choosing by remember { mutableStateOf(false) }
-                    Box(Modifier.padding(horizontal = 20.dp)) {
-                        OutlinedButton(onClick = { choosing = true }) { Text("Campsite: ${loadedCampsite.name}") }
-                        DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
-                            offeredCampsites.forEach { site ->
-                                DropdownMenuItem(text = { Text(site.name) }, onClick = { campsite = site; choosing = false })
-                            }
-                        }
-                    }
-                }
-                key(loadedCampsite.id) { ReserveFlow(
-                loadedLottery, loadedCampsite,
-                onReserve = { checkIn, checkOut, rulesAccepted ->
-                    reservationService.reserve(loadedLottery.id, checkIn, checkOut, rulesAccepted, loadedCampsite.id)
-                },
-                onDecline = { reservationService.decline(loadedLottery.id) },
-                onBack = onBack, onReserved = onReserved
-                ) }
-            }
+            else -> LotteryReservationFlow(selection, controller::reserve, controller::decline,
+                onBack, onReserved, onRefresh = { controller.load(lotteryId) })
         }
     }
 }
@@ -156,6 +100,11 @@ fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit)
  * @param onReserved Called after the reservation is confirmed.
  * @param initialCheckIn Check-in date to preselect as yyyy-MM-dd, or null.
  * @param initialCheckOut Check-out date to preselect as yyyy-MM-dd, or null.
+ * @param blockedNights Occupied nights across related lotteries; null uses the lottery's own bookings.
+ * @param firstAvailableNight First open night used to choose the calendar's initial month.
+ * @param backLabel Text for returning to campsite selection, or the parent screen for a single campsite.
+ * @param onDeclined Returns to the parent screen after releasing the entire lottery opportunity.
+ * @param today Current booking-calendar date; supplied explicitly by tests.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,36 +116,42 @@ internal fun ColumnScope.ReserveFlow(
     onBack: () -> Unit,
     onReserved: () -> Unit,
     initialCheckIn: String? = null,
-    initialCheckOut: String? = null
+    initialCheckOut: String? = null,
+    blockedNights: Set<String>? = null,
+    firstAvailableNight: String = lottery.stayStartDate,
+    backLabel: String = "Back",
+    onDeclined: () -> Unit = onBack,
+    today: String = reservationDateToday()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var confirming by rememberSaveable { mutableStateOf(false) }
     var rulesAccepted by rememberSaveable { mutableStateOf(false) }
-    var decliningSpot by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-    val selectableDates = remember(lottery, campsite) {
+    fun nightOpen(date: String) = date >= today && isNightOpen(date, lottery, campsite, blockedNights)
+    BackHandler(enabled = confirming || saving) { if (!saving) confirming = false }
+    val selectableDates = remember(lottery, campsite, blockedNights, today) {
         object : SelectableDates {
             // A taken night can still be a check-out day when the night before it is open.
             override fun isSelectableDate(utcTimeMillis: Long): Boolean =
-                isNightOpen(reservationDateFromUtcMillis(utcTimeMillis), lottery, campsite) ||
-                    isNightOpen(reservationDateFromUtcMillis(utcTimeMillis - DAY_MILLIS), lottery, campsite)
+                nightOpen(reservationDateFromUtcMillis(utcTimeMillis)) ||
+                    nightOpen(reservationDateFromUtcMillis(utcTimeMillis - DAY_MILLIS))
         }
     }
     val picker = rememberDateRangePickerState(
         initialSelectedStartDateMillis = initialCheckIn?.let(::reservationDateToUtcMillis),
         initialSelectedEndDateMillis = initialCheckOut?.let(::reservationDateToUtcMillis),
-        initialDisplayedMonthMillis = reservationDateToUtcMillis(lottery.stayStartDate),
+        initialDisplayedMonthMillis = reservationDateToUtcMillis(firstAvailableNight),
         selectableDates = selectableDates
     )
     val checkIn = picker.selectedStartDateMillis?.let(::reservationDateFromUtcMillis)
     val checkOut = picker.selectedEndDateMillis?.let(::reservationDateFromUtcMillis)
     val nights = if (checkIn != null && checkOut != null) reservationNights(checkIn, checkOut) else emptyList()
-    val datesOpen = nights.isNotEmpty() && nights.all { isNightOpen(it, lottery, campsite) }
+    val datesOpen = nights.isNotEmpty() && nights.all { nightOpen(it) }
 
     if (!confirming) {
-        ReserveBackButton(onBack)
+        ReserveBackButton(onBack, backLabel)
         Text(campsite.name.ifBlank { "Unnamed campsite" }, Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(8.dp))
         Text("Pick your dates. Dates that are greyed out are not available.", Modifier.padding(horizontal = 20.dp), color = PinedrawColors.TextSecondary)
@@ -214,44 +169,8 @@ internal fun ColumnScope.ReserveFlow(
                 enabled = datesOpen && !saving, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
             ) { Text("Continue", fontWeight = FontWeight.Bold) }
             if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Text("None of these work?", color = PinedrawColors.TextSecondary)
-                TextButton(onClick = { decliningSpot = true }, enabled = !saving) {
-                    Text(if (saving) "Declining..." else "Decline spot", color = PinedrawColors.Coral)
-                }
-            }
+            DeclineSpotAction(onDecline, onDeclined, enabled = !saving, onBusyChanged = { saving = it })
         }
-        if (decliningSpot) AlertDialog(
-            onDismissRequest = { decliningSpot = false },
-            title = { Text("Decline this spot?") },
-            text = { Text("Your spot goes to the next entrant in the draw. This can't be undone.") },
-            dismissButton = { TextButton(onClick = { decliningSpot = false }) { Text("Keep my spot") } },
-            confirmButton = {
-                TextButton(onClick = {
-                    decliningSpot = false
-                    saving = true
-                    error = ""
-                    scope.launch {
-                        try {
-                            val result = withTimeoutOrNull(20000) { onDecline() ?: "" }
-                            when {
-                                result == null -> error = "Could not decline your spot. Please try again."
-                                result.isNotEmpty() -> error = result
-                                else -> {
-                                    Toast.makeText(context, "Spot declined", Toast.LENGTH_LONG).show()
-                                    onBack()
-                                }
-                            }
-                        } catch (_: Exception) {
-                            coroutineContext.ensureActive() // Stop normally when leaving the screen.
-                            error = "Could not decline your spot. Please try again."
-                        } finally {
-                            saving = false
-                        }
-                    }
-                }) { Text("Decline", color = PinedrawColors.Coral) }
-            }
-        )
         return
     }
 
@@ -319,11 +238,11 @@ internal fun ColumnScope.ReserveFlow(
 
 // Returns to the screen the winner came from.
 @Composable
-private fun ReserveBackButton(onBack: () -> Unit) {
+private fun ReserveBackButton(onBack: () -> Unit, label: String = "Back") {
     TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) {
         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text("Back")
+        Text(label)
     }
 }
 

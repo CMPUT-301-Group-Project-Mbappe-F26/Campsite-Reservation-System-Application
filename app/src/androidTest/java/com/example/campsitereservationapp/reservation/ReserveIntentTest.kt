@@ -69,7 +69,8 @@ class ReserveIntentTest {
                 onBack = { wentBack = true },
                 onReserved = { reservedCalled = true },
                 initialCheckIn = checkIn,
-                initialCheckOut = checkOut
+                initialCheckOut = checkOut,
+                today = "2027-06-01"
             )
         }
     }
