@@ -29,7 +29,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 /*
  * Shows a campsite owner the reservations made at their campsite, filtered into active
  * (US 02.07.01), past (US 02.07.02) and cancelled (US 02.07.03) stays, and lets the owner
- * reject an active reservation (US 02.08.01).
+ * reject an active reservation (US 02.08.01). The same data also fills the booked-dates
+ * calendar ([BookedDatesCalendar], US 02.06.01).
  *
  * [CampsiteReservationsSection] loads the data and is shown on the owner's view of
  * [CampsiteDetailsScreen]. [CampsiteReservationList] only draws the lists, so intent tests
@@ -149,7 +150,10 @@ fun CampsiteReservationsSection(campsiteId: String) {
             Text(error, color = PinedrawColors.Coral)
             TextButton(onClick = { refresh++ }) { Text("Try again") }
         }
-        else -> CampsiteReservationList(bookings, onReject = ::reject, rejectingId = rejectingId, message = rejectMessage)
+        else -> Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            BookedDatesCalendar(bookedNightNames(bookings), reservationDateToday())
+            CampsiteReservationList(bookings, onReject = ::reject, rejectingId = rejectingId, message = rejectMessage)
+        }
     }
 }
 

@@ -10,8 +10,8 @@ import java.util.TimeZone
 /*
  * The Reservation model and the booking rules for reserving a campsite won in a lottery
  * (US 01.04.01, US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01), and the filters an owner
- * uses to view and reject a campsite's reservations (US 02.07.01, US 02.07.02, US 02.07.03,
- * US 02.08.01).
+ * uses to view and reject a campsite's reservations and booked dates (US 02.06.01,
+ * US 02.07.01, US 02.07.02, US 02.07.03, US 02.08.01).
  *
  * The functions here do no database work, so the screens, ReservationService and unit
  * tests all share the same rules.
@@ -223,6 +223,23 @@ fun reservationNights(checkIn: String, checkOut: String): List<String> {
         }
     }
 }
+
+/**
+ * Maps each booked night to the reservation that holds it (US 02.06.01).
+ *
+ * Only confirmed reservations book nights; cancelled and rejected ones are left out. If two
+ * reservations claim the same night, the one with the earlier check-in is kept.
+ *
+ * @param reservations Reservations for one campsite.
+ * @return Booked nights as yyyy-MM-dd, each with its reservation.
+ */
+fun bookedNights(reservations: List<Reservation>): Map<String, Reservation> =
+    reservations
+        .filter { it.status == RESERVATION_CONFIRMED }
+        .sortedBy { it.checkInDate }
+        .flatMap { reservation -> reservationNights(reservation.checkInDate, reservation.checkOutDate).map { it to reservation } }
+        .distinctBy { it.first }
+        .toMap()
 
 /**
  * Gets the reservations that count toward a lottery's capacity.
