@@ -10,10 +10,6 @@ import kotlinx.coroutines.tasks.await
 import com.google.firebase.firestore.ListenerRegistration
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.User
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 import java.util.UUID
 
 /**
@@ -173,33 +169,9 @@ class CampsiteService {
         if (auth.currentUser == null) throw Exception("Not signed in")
         db.collection("campsites").document(id).update("rules", rules.trim()).await()
     }
-    suspend fun getOpenLottery(campsiteId: String): Lottery? {
-
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.CANADA)
-        dateFormat.timeZone = TimeZone.getTimeZone("America/Edmonton")
-        val today = dateFormat.format(Date())
-
-        val result = db.collection("lotteries")
-            .whereEqualTo("campsiteId", campsiteId)
-            .get()
-            .await()
-
-        for (document in result.documents) {
-            val lottery = document.toObject(Lottery::class.java)
-
-            if (lottery != null) {
-                val hasStarted = lottery.registrationStartDate <= today
-                val hasNotEnded = lottery.registrationEndDate >= today
-                val notDrawn = !lottery.drawCompleted
-
-                if (hasStarted && hasNotEnded && notDrawn) {
-                    return lottery
-                }
-            }
-        }
-
-        return null
-    }
+    /** Uses the shared Alberta-date and multi-campsite lookup rules. */
+    suspend fun getOpenLottery(campsiteId: String): Lottery? =
+        LotteryService().getOpenLotteryForCampsite(campsiteId)
 
     /**
      * Loads every registered campsite, published or not, for the Admin Dashboard.
@@ -250,6 +222,9 @@ class CampsiteService {
         val lotteries = db.collection("lotteries")
             .whereEqualTo("campsiteId", campsiteId)
             .get(com.google.firebase.firestore.Source.SERVER).await()
+        val sharedLotteries = db.collection("lotteries")
+            .whereArrayContains("campsiteIds", campsiteId)
+            .get(com.google.firebase.firestore.Source.SERVER).await()
         db.runTransaction { transaction ->
             check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
             if (asAdmin) {
@@ -260,7 +235,7 @@ class CampsiteService {
                 check(current?.isOwnedBy(uid) == true) { "You can only delete your own campsite." }
             }
             // Read each lottery again so a concurrent draw cannot be overwritten.
-            val active = lotteries.documents.mapNotNull { document ->
+            val active = (lotteries.documents + sharedLotteries.documents).distinctBy { it.id }.mapNotNull { document ->
                 val lottery = transaction.get(document.reference).toObject(Lottery::class.java)
                 if (lottery != null && isLotteryActive(lottery)) document.reference to lottery else null
             }
@@ -270,6 +245,7 @@ class CampsiteService {
                     "registered" to closed.registered,
                     "registeredGroupSizes" to emptyMap<String, Int>(),
                     "pending" to closed.pending,
+                    "closedCampsiteId" to campsiteId,
                     "drawCompleted" to closed.drawCompleted
                 ))
             }

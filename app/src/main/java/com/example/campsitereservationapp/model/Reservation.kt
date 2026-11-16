@@ -163,7 +163,10 @@ fun isNightOpen(night: String, lottery: Lottery, campsite: Campsite): Boolean {
         .get(Calendar.DAY_OF_WEEK)
     val day = (calendarDay + 5) % 7 + 1 // Campsites use Monday = 1 through Sunday = 7.
     if (campsite.availableDays.isNotEmpty() && day !in campsite.availableDays) return false
-    return confirmedReservations(lottery).none { night in reservationNights(it.checkInDate, it.checkOutDate) }
+    return confirmedReservations(lottery).none {
+        it.campsiteId.ifBlank { lottery.campsiteId } == campsite.id.ifBlank { lottery.campsiteId } &&
+            night in reservationNights(it.checkInDate, it.checkOutDate)
+    }
 }
 
 /**

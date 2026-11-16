@@ -108,6 +108,12 @@ class WaitingListJoinTest {
     }
 
     @Test
+    fun unlimitedWaitingListAcceptsEntrantsBeyondTheLegacyDefault() {
+        assertNull(waitingListJoinError(lottery.copy(waitingListCapacity = 0,
+            registered = (1..1001).map { "entrant-$it" }), campsite, "new-entrant", 1, duringRegistration))
+    }
+
+    @Test
     fun albertaPermanentOffsetChangesDateAtUtcMinusSix() {
         val utc = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).apply {
             isLenient = false

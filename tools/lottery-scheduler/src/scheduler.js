@@ -14,9 +14,19 @@ export async function drawLotteryDocument(db, reference, { now, dryRun = true })
         lottery.campsiteId.includes("/")) {
       throw new DrawDataError("Lottery must reference a campsite and its owner.");
     }
-    const campsite = await transaction.get(db.collection("campsites").doc(lottery.campsiteId));
-    if (!campsite.exists || campsite.data().ownerId !== lottery.ownerId) {
-      throw new DrawDataError("Campsite is missing or its owner does not match the lottery.");
+    if (lottery.campsiteIds !== undefined && !Array.isArray(lottery.campsiteIds)) {
+      throw new DrawDataError("Campsite IDs must be a list.");
+    }
+    const ids = lottery.campsiteIds?.length ? lottery.campsiteIds : [lottery.campsiteId];
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string" || !id.trim() || id.includes("/")) ||
+        new Set(ids).size !== ids.length || !ids.includes(lottery.campsiteId)) {
+      throw new DrawDataError("Lottery must reference distinct valid campsites.");
+    }
+    for (const id of ids) {
+      const campsite = await transaction.get(db.collection("campsites").doc(id));
+      if (!campsite.exists || campsite.data().ownerId !== lottery.ownerId) {
+        throw new DrawDataError("Campsite is missing or its owner does not match the lottery.");
+      }
     }
     if (!dryRun) transaction.update(reference, update);
     return { status: dryRun ? "previewed" : "drawn", winnerCount: update.pending.length };

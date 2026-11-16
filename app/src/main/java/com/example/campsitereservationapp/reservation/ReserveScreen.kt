@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
+import com.example.campsitereservationapp.model.offeredCampsiteIds
 import com.example.campsitereservationapp.model.formatReservationDate
 import com.example.campsitereservationapp.model.isNightOpen
 import com.example.campsitereservationapp.model.reservationDateFromUtcMillis
@@ -64,6 +65,7 @@ fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit)
     val entrantId = rememberCampsiteOwnerId()
     var lottery by remember(lotteryId, entrantId) { mutableStateOf<Lottery?>(null) }
     var campsite by remember(lotteryId, entrantId) { mutableStateOf<Campsite?>(null) }
+    var offeredCampsites by remember(lotteryId, entrantId) { mutableStateOf<List<Campsite>>(emptyList()) }
     var loading by remember(lotteryId, entrantId) { mutableStateOf(true) }
     var error by remember(lotteryId, entrantId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
@@ -77,13 +79,17 @@ fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit)
             check(entrantId != null) { "Not signed in" }
             val result = withTimeoutOrNull(20000) {
                 val found = reservationService.getLottery(lotteryId)
-                found to found?.let { campsiteService.getCampsite(it.campsiteId) }
+                found to found?.offeredCampsiteIds()?.mapNotNull { campsiteService.getCampsite(it) }.orEmpty()
             }
-            if (result?.first == null || result.second == null) error = "This lottery is unavailable or could not be loaded. Please try again."
+            if (result?.first == null || result.second.isEmpty()) error = "This lottery is unavailable or could not be loaded. Please try again."
             else if (entrantId !in result.first!!.pending) error = "You do not have a spot to reserve in this lottery."
             else {
                 lottery = result.first
-                campsite = result.second
+                offeredCampsites = result.second.filter {
+                    (it.maxOccupancy ?: 0) >= (result.first!!.registeredGroupSizes[entrantId] ?: 1)
+                }
+                campsite = offeredCampsites.firstOrNull()
+                if (campsite == null) error = "None of the listed campsites can accommodate your party."
             }
         } catch (_: Exception) {
             coroutineContext.ensureActive() // Stop normally when leaving the screen.
@@ -111,14 +117,27 @@ fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit)
                     TextButton(onClick = { refresh++ }) { Text("Try again") }
                 }
             }
-            else -> ReserveFlow(
+            else -> {
+                if (offeredCampsites.size > 1) {
+                    var choosing by remember { mutableStateOf(false) }
+                    Box(Modifier.padding(horizontal = 20.dp)) {
+                        OutlinedButton(onClick = { choosing = true }) { Text("Campsite: ${loadedCampsite.name}") }
+                        DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+                            offeredCampsites.forEach { site ->
+                                DropdownMenuItem(text = { Text(site.name) }, onClick = { campsite = site; choosing = false })
+                            }
+                        }
+                    }
+                }
+                key(loadedCampsite.id) { ReserveFlow(
                 loadedLottery, loadedCampsite,
                 onReserve = { checkIn, checkOut, rulesAccepted ->
-                    reservationService.reserve(loadedLottery.id, checkIn, checkOut, rulesAccepted)
+                    reservationService.reserve(loadedLottery.id, checkIn, checkOut, rulesAccepted, loadedCampsite.id)
                 },
                 onDecline = { reservationService.decline(loadedLottery.id) },
                 onBack = onBack, onReserved = onReserved
-            )
+                ) }
+            }
         }
     }
 }

@@ -163,7 +163,7 @@ private fun LotteryCard(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        listing.campsite.name.ifBlank { "Campsite lottery" },
+                        listing.campsites.joinToString(", ") { it.name.ifBlank { "Campsite" } },
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(listing.campsite.location, color = PinedrawColors.TextSecondary)

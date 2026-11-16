@@ -6,6 +6,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.campsitereservationapp.model.Lottery
+import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.LotteryService
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.ensureActive
@@ -20,7 +22,10 @@ import kotlinx.coroutines.launch
  *
  * @property saving Whether a submission is in progress; the form disables editing and navigation.
  * @property error Latest displayable submission error, or an empty string when there is none.
- * @property created Whether submission succeeded and the form should confirm and close.
+ * @property created Whether creation, update, or deletion succeeded and the form should close.
+ * @property successMessage Confirmation describing the operation that completed.
+ * @property campsites Owned listings available to the form.
+ * @property loadingCampsites Whether the owner's offerings are being loaded.
  */
 class LotteryCreationViewModel : ViewModel() {
     var saving by mutableStateOf(false)
@@ -29,8 +34,29 @@ class LotteryCreationViewModel : ViewModel() {
         private set
     var created by mutableStateOf(false)
         private set
+    var successMessage by mutableStateOf("")
+        private set
     private val service = LotteryService()
     private var draftId = service.newLotteryId()
+    var campsites by mutableStateOf<List<Campsite>>(emptyList())
+        private set
+    var loadingCampsites by mutableStateOf(true)
+        private set
+
+    /** Loads the owner's selectable listings without making the view access Firebase. */
+    fun loadCampsites() {
+        viewModelScope.launch {
+            loadingCampsites = true
+            try {
+                campsites = CampsiteService().getMyCampsites()
+            } catch (exception: Exception) {
+                coroutineContext.ensureActive()
+                error = "Could not load your campsites. Try again."
+            } finally {
+                loadingCampsites = false
+            }
+        }
+    }
 
     /** Clears a previous failure after an edit, unless a submission is in progress. */
     fun clearError() {
@@ -47,6 +73,7 @@ class LotteryCreationViewModel : ViewModel() {
         if (saving) return
         error = ""
         created = false
+        successMessage = ""
         draftId = service.newLotteryId()
     }
 
@@ -58,25 +85,39 @@ class LotteryCreationViewModel : ViewModel() {
      * propagates instead of being presented as a submission error.
      *
      * @param lottery Current form values; its ID is replaced with the stable draft ID.
+     * @param original Original listing when updating; null creates a new lottery.
      */
-    fun submit(lottery: Lottery) {
+    fun submit(lottery: Lottery, original: Lottery? = null) = perform(
+        if (original == null) "Lottery created successfully" else "Lottery updated; entrants notified"
+    ) {
+        if (original == null) service.createLottery(lottery.copy(id = draftId))
+        else service.updateLottery(original, lottery.copy(id = original.id))
+    }
+
+    /** Deletes only after the view's explicit confirmation; service checks current lifecycle and ownership. */
+    fun delete(lottery: Lottery) = perform("Lottery deleted; entrants notified") {
+        service.deleteLottery(lottery)
+    }
+
+    private fun perform(message: String, operation: suspend () -> Unit) {
         if (saving || created) return
         saving = true
         error = ""
         viewModelScope.launch {
             try {
-                service.createLottery(lottery.copy(id = draftId))
+                operation()
+                successMessage = message
                 created = true
             } catch (exception: Exception) {
                 coroutineContext.ensureActive()
                 error = when (exception) {
                     is IllegalArgumentException, is IllegalStateException -> exception.message
                     is FirebaseFirestoreException -> when (exception.code) {
-                        FirebaseFirestoreException.Code.PERMISSION_DENIED -> "Permission denied. Check that your account can create lotteries."
+                        FirebaseFirestoreException.Code.PERMISSION_DENIED -> "Permission denied. Check Firebase access for lotteries and lottery notices."
                         else -> null
                     }
                     else -> null
-                } ?: "Could not create the lottery. Check your connection and try again."
+                } ?: "Could not save the lottery change. Check your connection and try again."
             } finally {
                 saving = false
             }

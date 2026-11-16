@@ -84,6 +84,8 @@ fun CampsiteDetailsScreen(
     var error by remember(campsiteId, ownerId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
     var creatingLottery by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
+    var editingLotteryId by rememberSaveable(campsiteId, ownerId) { mutableStateOf<String?>(null) }
+    var ownerLotteries by remember(campsiteId, ownerId) { mutableStateOf<List<Lottery>>(emptyList()) }
     var editingCampsite by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
     var joining by rememberSaveable(campsiteId) { mutableStateOf(false) }
     var leaving by rememberSaveable(campsiteId) { mutableStateOf(false) }
@@ -101,6 +103,10 @@ fun CampsiteDetailsScreen(
                 error = "This campsite is unavailable or could not be loaded. Please try again."
             else {
                 campsite = result
+                if (result.isOwnedBy(ownerId)) {
+                    ownerLotteries = lotteryService.getLotteriesForCampsite(campsiteId)
+                        .filter { !it.drawCompleted && it.pending.isEmpty() && it.booked.isEmpty() }
+                }
                 if (entrantId != null && result.ownerId != entrantId) {
                     lottery = withTimeoutOrNull(20000) {
                         lotteryService.getOpenLotteryForCampsite(campsiteId)
@@ -115,9 +121,9 @@ fun CampsiteDetailsScreen(
         }
     }
     // If selected campsite has an open lottery
-    LaunchedEffect(campsiteId) {
+    LaunchedEffect(campsiteId, refresh) {
         try {
-            openLottery = service.getOpenLottery(campsiteId)
+            openLottery = lotteryService.getOpenLotteryForCampsite(campsiteId)
             // Update status
             if (openLottery != null) {
                 lotteryStatus = "Registration open"
@@ -149,7 +155,13 @@ fun CampsiteDetailsScreen(
         return
     }
     if (creatingLottery && !loading && error.isEmpty() && ownedCampsite != null) {
-        LotteryCreation(campsite = ownedCampsite, onCancel = { creatingLottery = false })
+        LotteryCreation(campsite = ownedCampsite, onCancel = { creatingLottery = false; refresh++ })
+        return
+    }
+    val editingLottery = ownerLotteries.find { it.id == editingLotteryId }
+    if (editingLottery != null && !loading && error.isEmpty() && ownedCampsite != null) {
+        LotteryCreation(campsite = ownedCampsite, existingLottery = editingLottery,
+            onCancel = { editingLotteryId = null; refresh++ })
         return
     }
 
@@ -208,6 +220,13 @@ fun CampsiteDetailsScreen(
                             )
                         ) {
                             Text("Create Lottery", fontWeight = FontWeight.Bold)
+                        }
+                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) {
+                            ownerLotteries.forEach { current ->
+                                OutlinedButton(onClick = { editingLotteryId = current.id }, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Edit lottery: ${current.registrationStartDate} – ${current.registrationEndDate}")
+                                }
+                            }
                         }
                         Surface(
                             color = if (site.published) PinedrawColors.Lime.copy(alpha = 0.15f) else PinedrawColors.Glass,

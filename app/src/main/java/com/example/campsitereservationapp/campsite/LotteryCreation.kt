@@ -30,9 +30,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
+import com.example.campsitereservationapp.model.offeredCampsiteIds
+import com.example.campsitereservationapp.model.MAX_LOTTERY_CAMPSITES
+import com.example.campsitereservationapp.service.lotteryListingError
 import com.example.campsitereservationapp.service.lotteryCapacityError
 import com.example.campsitereservationapp.service.validateLottery
-import com.example.campsitereservationapp.service.lotteryStayAvailabilityError
 import com.example.campsitereservationapp.service.isLotteryStayDateSelectable
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
@@ -57,23 +59,41 @@ import kotlinx.coroutines.launch
  *
  * @param campsite Loaded campsite whose ID, owner, and maximum occupancy define the draft.
  * @param onCancel Closes the form on cancellation or successful creation.
+ * @param existingLottery Prefills an owned undrawn lottery; update/delete require confirmation.
  */
 @Composable
-fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
-    var winners by rememberSaveable(campsite.id) { mutableStateOf("") }
-    var useMaxCapacity by rememberSaveable(campsite.id) { mutableStateOf(false) }
-    val maximum = campsite.maxOccupancy
+fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: Lottery? = null) {
+    val formKey = existingLottery?.id ?: campsite.id
+    val submission: LotteryCreationViewModel = viewModel(key = "lottery-${campsite.ownerId}-$formKey")
+    LaunchedEffect(formKey) { submission.loadCampsites() }
+    var selectedIds by rememberSaveable(formKey) {
+        mutableStateOf(ArrayList(existingLottery?.offeredCampsiteIds() ?: listOf(campsite.id)))
+    }
+    val choices = (submission.campsites + campsite).distinctBy { it.id }
+    val selectedSites = selectedIds.mapNotNull { id -> choices.find { it.id == id } }
+    var addingCampsite by remember { mutableStateOf(false) }
+    var duplicateError by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf<String?>(null) }
+    var limitWaitlist by rememberSaveable(formKey) { mutableStateOf((existingLottery?.waitingListCapacity ?: 0) > 0) }
+    var waitlistLimit by rememberSaveable(formKey) { mutableStateOf(existingLottery?.waitingListCapacity?.takeIf { it > 0 }?.toString().orEmpty()) }
+    var winners by rememberSaveable(formKey) { mutableStateOf(existingLottery?.numberOfWinners?.toString().orEmpty()) }
+    var useMaxCapacity by rememberSaveable(formKey) { mutableStateOf(existingLottery?.useMaxCapacity ?: false) }
+    val maximum = selectedSites.takeIf { it.isNotEmpty() && it.all { site -> (site.maxOccupancy ?: 0) > 0 } }
+        ?.sumOf { it.maxOccupancy!! }
     val winnerCount = if (useMaxCapacity) maximum ?: 0 else winners.toIntOrNull() ?: 0
     val capacityError = if (useMaxCapacity || winners.isNotBlank() || maximum == null || maximum <= 0)
         lotteryCapacityError(winnerCount, maximum, useMaxCapacity) else null
-    var registrationStart by rememberSaveable(campsite.id) { mutableStateOf("") }
-    var registrationEnd by rememberSaveable(campsite.id) { mutableStateOf("") }
-    var bookingStart by rememberSaveable(campsite.id) { mutableStateOf("") }
-    var bookingEnd by rememberSaveable(campsite.id) { mutableStateOf("") }
-    var stayStart by rememberSaveable(campsite.id) { mutableStateOf("") }
-    var stayEnd by rememberSaveable(campsite.id) { mutableStateOf("") }
+    var registrationStart by rememberSaveable(formKey) { mutableStateOf(existingLottery?.registrationStartDate.orEmpty()) }
+    var registrationEnd by rememberSaveable(formKey) { mutableStateOf(existingLottery?.registrationEndDate.orEmpty()) }
+    var bookingStart by rememberSaveable(formKey) { mutableStateOf(existingLottery?.bookingStartDate.orEmpty()) }
+    var bookingEnd by rememberSaveable(formKey) { mutableStateOf(existingLottery?.bookingEndDate.orEmpty()) }
+    var stayStart by rememberSaveable(formKey) { mutableStateOf(existingLottery?.stayStartDate.orEmpty()) }
+    var stayEnd by rememberSaveable(formKey) { mutableStateOf(existingLottery?.stayEndDate.orEmpty()) }
     val draft = Lottery(
-        id = "draft", ownerId = campsite.ownerId, campsiteId = campsite.id,
+        id = existingLottery?.id ?: "draft", ownerId = campsite.ownerId,
+        campsiteId = existingLottery?.campsiteId?.takeIf { it in selectedIds } ?: selectedIds.firstOrNull().orEmpty(),
+        campsiteIds = selectedIds.toList(),
+        waitingListCapacity = if (limitWaitlist) waitlistLimit.toIntOrNull()?.takeIf { it > 0 } ?: -1 else 0,
         numberOfWinners = winnerCount, useMaxCapacity = useMaxCapacity,
         registrationStartDate = registrationStart, registrationEndDate = registrationEnd,
         bookingStartDate = bookingStart, bookingEndDate = bookingEnd,
@@ -81,10 +101,9 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
     )
     val validationError = runCatching { validateLottery(draft) }.exceptionOrNull()?.message
     val availabilityError = if (stayStart.isNotBlank() && stayEnd.isNotBlank())
-        lotteryStayAvailabilityError(stayStart, stayEnd, campsite) else null
+        lotteryListingError(draft, selectedSites) else null
     val allDatesSelected = listOf(registrationStart, registrationEnd, bookingStart, bookingEnd, stayStart, stayEnd)
         .all { it.isNotBlank() }
-    val submission: LotteryCreationViewModel = viewModel(key = "lottery-${campsite.ownerId}-${campsite.id}")
     LaunchedEffect(draft) { submission.clearError() }
     val context = LocalContext.current
     val close: () -> Unit = {
@@ -95,13 +114,27 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
     }
     LaunchedEffect(submission.created) {
         if (submission.created) {
-            Toast.makeText(context, "Lottery created successfully", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, submission.successMessage, Toast.LENGTH_LONG).show()
             submission.reset()
             onCancel()
         }
     }
 
     BackHandler { close() }
+
+    if (confirmation != null) AlertDialog(
+        onDismissRequest = { confirmation = null },
+        title = { Text("Are you sure?") },
+        text = { Text(if (confirmation == "delete") "Delete this lottery and notify all participating entrants?"
+            else "Update this lottery and notify all participating entrants?") },
+        dismissButton = { TextButton(onClick = { confirmation = null }) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = {
+            val action = confirmation
+            confirmation = null
+            if (action == "delete") submission.delete(existingLottery!!)
+            else submission.submit(draft, existingLottery)
+        }) { Text("Proceed") } }
+    )
 
     Column(
         Modifier.fillMaxSize()
@@ -126,11 +159,61 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Large)
         ) {
-            Text("Create Lottery", style = MaterialTheme.typography.headlineLarge)
+            Text(if (existingLottery == null) "Create Lottery" else "Edit Lottery", style = MaterialTheme.typography.headlineLarge)
             Text(campsite.name.ifBlank { "Unnamed campsite" },
                 style = MaterialTheme.typography.titleLarge, color = PinedrawColors.Lime)
             Text("Set when entrants can join, when winners can book, and the stay dates on offer.",
                 color = PinedrawColors.TextSecondary)
+
+            LotterySection("Campsites") {
+                Text("Add up to $MAX_LOTTERY_CAMPSITES owned campsites. Winners share one draw and choose a listed campsite when booking. Max uses the combined occupancy.",
+                    color = PinedrawColors.TextSecondary)
+                selectedIds.forEach { id ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(choices.find { it.id == id }?.name ?: "Unavailable campsite ($id)", Modifier.weight(1f))
+                        TextButton(enabled = !submission.saving && selectedIds.size > 1, onClick = {
+                            selectedIds = ArrayList(selectedIds.filterNot { it == id })
+                            duplicateError = ""
+                        }) { Text("Remove") }
+                    }
+                }
+                Box {
+                    OutlinedButton(onClick = { addingCampsite = true }, enabled = !submission.saving && !submission.loadingCampsites) {
+                        Text("Add campsite")
+                    }
+                    DropdownMenu(expanded = addingCampsite, onDismissRequest = { addingCampsite = false }) {
+                        choices.forEach { site ->
+                            DropdownMenuItem(text = { Text(site.name) }, onClick = {
+                                addingCampsite = false
+                                if (site.id in selectedIds) duplicateError = "Duplicate campsites are not allowed."
+                                else if (selectedIds.size >= MAX_LOTTERY_CAMPSITES) duplicateError = "A lottery can include at most $MAX_LOTTERY_CAMPSITES campsites."
+                                else {
+                                    selectedIds = ArrayList(selectedIds + site.id)
+                                    duplicateError = ""
+                                }
+                            })
+                        }
+                    }
+                }
+                if (submission.loadingCampsites) CircularProgressIndicator(Modifier.size(20.dp))
+                if (duplicateError.isNotEmpty()) Text(duplicateError, color = PinedrawColors.Coral)
+                if (!submission.loadingCampsites && submission.campsites.isEmpty()) {
+                    TextButton(onClick = { submission.loadCampsites() }) { Text("Reload campsites") }
+                }
+            }
+
+            LotterySection("Waiting list") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = limitWaitlist, enabled = !submission.saving, onCheckedChange = { limitWaitlist = it })
+                    Text("Limit participating entrants (optional)")
+                }
+                if (limitWaitlist) OutlinedTextField(
+                    value = waitlistLimit, onValueChange = { value -> if (value.all { it in '0'..'9' }) waitlistLimit = value },
+                    enabled = !submission.saving, label = { Text("Maximum entrants") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Must be greater than the number of winners.") }
+                ) else Text("No waiting-list limit", color = PinedrawColors.TextSecondary)
+            }
 
             LotterySection("Winners") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -191,17 +274,19 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
                 LotteryDateField("Booking end", bookingEnd, !submission.saving) { bookingEnd = it }
             }
             LotterySection("Stay period") {
-                Text("Offer stay dates within this campsite's availability. The checkout date is not a booked night.",
+                Text("Offer stay dates within every selected campsite's availability. The checkout date is not a booked night.",
                     color = PinedrawColors.TextSecondary)
-                Text("Available nights: ${campsite.availableFrom.ifBlank { "Any start date" }} to ${campsite.availableUntil.ifBlank { "No end date" }}",
-                    style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
-                if (campsite.availableDays.isNotEmpty()) {
-                    val weekdays = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-                    Text(campsite.availableDays.distinct().sorted().mapNotNull { weekdays.getOrNull(it - 1) }.joinToString(", "),
+                selectedSites.forEach { site ->
+                    Text("${site.name}: ${site.availableFrom.ifBlank { "Any start date" }} to ${site.availableUntil.ifBlank { "No end date" }}",
                         style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+                    if (site.availableDays.isNotEmpty()) {
+                        val weekdays = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                        Text(site.availableDays.distinct().sorted().mapNotNull { weekdays.getOrNull(it - 1) }.joinToString(", "),
+                            style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+                    }
                 }
-                LotteryDateField("First offered night", stayStart, !submission.saving, campsite) { stayStart = it }
-                LotteryDateField("Stay end (checkout)", stayEnd, !submission.saving, campsite, checkout = true) { stayEnd = it }
+                LotteryDateField("First offered night", stayStart, !submission.saving, campsites = selectedSites) { stayStart = it }
+                LotteryDateField("Stay end (checkout)", stayEnd, !submission.saving, checkout = true, campsites = selectedSites) { stayEnd = it }
                 if (availabilityError != null) {
                     Text(availabilityError, color = PinedrawColors.Coral, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
@@ -218,8 +303,8 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
             Button(
-                onClick = { submission.submit(draft) },
-                enabled = !submission.saving && capacityError == null && validationError == null && availabilityError == null,
+                onClick = { if (existingLottery == null) submission.submit(draft) else confirmation = "update" },
+                enabled = !submission.saving && !submission.loadingCampsites && capacityError == null && validationError == null && availabilityError == null,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 shape = CircleShape,
                 colors = ButtonDefaults.buttonColors(
@@ -230,8 +315,12 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit) {
                     CircularProgressIndicator(Modifier.size(20.dp), color = PinedrawColors.Lime)
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(if (submission.saving) "Creating Lottery…" else "Start Lottery", fontWeight = FontWeight.Bold)
+                Text(if (submission.saving) "Saving..." else if (existingLottery == null) "Start Lottery" else "Update", fontWeight = FontWeight.Bold)
             }
+            if (existingLottery != null) OutlinedButton(
+                onClick = { confirmation = "delete" }, enabled = !submission.saving,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) { Text("Delete", color = PinedrawColors.Coral) }
         }
     }
 }
@@ -252,7 +341,7 @@ private fun CapacityHelp() {
         state = state,
         tooltip = {
             PlainTooltip(modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
-                Text("Enter a positive whole number strictly less than the campsite maximum. Select Max to use exactly the maximum.")
+                Text("Enter a positive whole number strictly less than the selected campsites' combined occupancy. Select Max to use exactly that maximum.")
             }
         }
     ) {
@@ -298,6 +387,7 @@ private fun LotterySection(title: String, content: @Composable ColumnScope.() ->
  * @param campsite Optional campsite whose season and weekdays constrain stay endpoints.
  * Registration and booking window pickers leave this null so advance booking remains possible.
  * @param checkout Whether this is a checkout endpoint rather than the first offered night.
+ * @param campsites All selected offerings whose availability constrains stay endpoints.
  * @param onChange Receives the confirmed date as a `yyyy-MM-dd` string.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -305,6 +395,7 @@ private fun LotterySection(title: String, content: @Composable ColumnScope.() ->
 private fun LotteryDateField(
     label: String, value: String, enabled: Boolean,
     campsite: Campsite? = null, checkout: Boolean = false,
+    campsites: List<Campsite> = listOfNotNull(campsite),
     onChange: (String) -> Unit
 ) {
     var picking by remember { mutableStateOf(false) }
@@ -324,10 +415,11 @@ private fun LotteryDateField(
         val formatter = remember {
             SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { timeZone = TimeZone.getTimeZone("UTC") }
         }
-        val selectable = remember(campsite, checkout) {
+        val selectable = remember(campsites, checkout) {
             object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean = campsite == null ||
-                    isLotteryStayDateSelectable(utcTimeMillis, campsite, checkout)
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = campsites.all {
+                    isLotteryStayDateSelectable(utcTimeMillis, it, checkout)
+                }
             }
         }
         val state = rememberDatePickerState(

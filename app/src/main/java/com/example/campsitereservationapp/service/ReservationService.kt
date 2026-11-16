@@ -7,6 +7,7 @@ import com.example.campsitereservationapp.model.activeReservations
 import com.example.campsitereservationapp.model.declineError
 import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.model.reservationError
+import com.example.campsitereservationapp.model.offeredCampsiteIds
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -97,23 +98,28 @@ class ReservationService {
      * @param checkIn First night as yyyy-MM-dd.
      * @param checkOut Check-out day as yyyy-MM-dd.
      * @param rulesAccepted Whether the entrant agreed to the campsite rules.
+     * @param campsiteId Winner's choice among the lottery's offerings; null selects the primary campsite.
      * @return A message explaining why the dates could not be reserved, or null on success.
      * @throws Exception If no user is signed in.
      */
-    suspend fun reserve(lotteryId: String, checkIn: String, checkOut: String, rulesAccepted: Boolean): String? {
+    suspend fun reserve(lotteryId: String, checkIn: String, checkOut: String, rulesAccepted: Boolean, campsiteId: String? = null): String? {
         val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
         val lotteryDoc = db.collection("lotteries").document(lotteryId)
         val reservationDoc = db.collection("reservations").document()
         return db.runTransaction { transaction ->
             val lottery = transaction.get(lotteryDoc).toObject(Lottery::class.java)
                 ?: return@runTransaction "This lottery is no longer available."
-            val campsiteDoc = db.collection("campsites").document(lottery.campsiteId)
-            val campsite = transaction.get(campsiteDoc).toObject(Campsite::class.java)
+            val selectedId = campsiteId ?: lottery.campsiteId
+            if (selectedId !in lottery.offeredCampsiteIds()) return@runTransaction "Choose a campsite listed in this lottery."
+            val campsiteDoc = db.collection("campsites").document(selectedId)
+            val campsite = transaction.get(campsiteDoc).toObject(Campsite::class.java)?.copy(id = selectedId)
                 ?: return@runTransaction "This campsite is no longer available."
+            if ((lottery.registeredGroupSizes[uid] ?: 1) > (campsite.maxOccupancy ?: 0))
+                return@runTransaction "Your party exceeds this campsite's maximum occupancy."
             val error = reservationError(lottery, campsite, uid, checkIn, checkOut, rulesAccepted, reservationDateToday())
             if (error != null) return@runTransaction error
             val reservation = Reservation(
-                id = reservationDoc.id, entrantId = uid, campsiteId = lottery.campsiteId, lotteryId = lotteryId,
+                id = reservationDoc.id, entrantId = uid, campsiteId = selectedId, lotteryId = lotteryId,
                 campsiteName = campsite.name, checkInDate = checkIn, checkOutDate = checkOut
             )
             transaction.set(reservationDoc, reservation)

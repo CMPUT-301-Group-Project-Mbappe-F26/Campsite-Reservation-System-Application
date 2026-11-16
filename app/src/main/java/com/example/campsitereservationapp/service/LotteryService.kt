@@ -2,6 +2,8 @@ package com.example.campsitereservationapp.service
 
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.model.offeredCampsiteIds
+import com.example.campsitereservationapp.model.MAX_LOTTERY_CAMPSITES
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -31,6 +33,16 @@ class LotteryService {
      */
     fun newLotteryId(): String = db.collection("lotteries").document().id
 
+    /** Includes legacy documents and lotteries where this campsite is an additional offering. */
+    suspend fun getLotteriesForCampsite(campsiteId: String): List<Lottery> {
+        require(campsiteId.isNotBlank() && '/' !in campsiteId) { "Provide a valid campsite document ID." }
+        val primary = db.collection("lotteries").whereEqualTo("campsiteId", campsiteId).get().await()
+        val shared = db.collection("lotteries").whereArrayContains("campsiteIds", campsiteId).get().await()
+        return (primary.documents + shared.documents).distinctBy { it.id }.mapNotNull {
+            it.toObject(Lottery::class.java)?.copy(id = it.id)
+        }
+    }
+
     /**
      * Validates and saves a lottery belonging to the signed-in campsite owner.
      *
@@ -50,25 +62,16 @@ class LotteryService {
         validateLottery(lottery)
         val uid = auth.currentUser?.uid ?: error("Please sign in before creating a lottery.")
         check(lottery.ownerId == uid) { "This campsite does not belong to your account." }
-        val campsite = db.collection("campsites").document(lottery.campsiteId)
         val document = db.collection("lotteries").document(lottery.id)
         db.runTransaction { transaction ->
-            val site = transaction.get(campsite)
             val existing = transaction.get(document)
-            check(site.exists()) { "This campsite is no longer available." }
-            check(site.getString("ownerId") == uid && auth.currentUser?.uid == uid) {
-                "This campsite does not belong to your account."
+            val campsites = lottery.offeredCampsiteIds().map { id ->
+                transaction.get(db.collection("campsites").document(id)).toObject(Campsite::class.java)
+                    ?.copy(id = id) ?: error("This campsite is no longer available.")
             }
-            val currentCampsite = site.toObject(Campsite::class.java)
-                ?: error("This campsite is no longer available.")
-            val capacityError = lotteryCapacityError(
-                lottery.numberOfWinners, currentCampsite.maxOccupancy, lottery.useMaxCapacity
-            )
-            require(capacityError == null) { capacityError.orEmpty() }
-            val availabilityError = lotteryStayAvailabilityError(
-                lottery.stayStartDate, lottery.stayEndDate, currentCampsite
-            )
-            require(availabilityError == null) { availabilityError.orEmpty() }
+            check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+            val listingError = lotteryListingError(lottery, campsites)
+            require(listingError == null) { listingError.orEmpty() }
             if (existing.exists()) {
                 // A retry after a delayed response must not create a second lottery.
                 check(existing.toObject(Lottery::class.java) == lottery) {
@@ -79,6 +82,74 @@ class LotteryService {
             }
         }.await()
         return document.id
+    }
+
+    /** Updates only listing fields and atomically records a durable notice for every entrant. */
+    suspend fun updateLottery(original: Lottery, draft: Lottery) {
+        validateLottery(draft)
+        require(original.id == draft.id && original.ownerId == draft.ownerId) { "The lottery identity cannot change." }
+        val uid = auth.currentUser?.uid ?: error("Please sign in.")
+        val document = db.collection("lotteries").document(original.id)
+        val notice = db.collection("lotteryNotices").document("${original.id}_${original.listingRevision + 1}")
+        db.runTransaction { transaction ->
+            val current = transaction.get(document).toObject(Lottery::class.java)?.copy(id = original.id)
+                ?: error("This lottery is no longer available.")
+            check(current.ownerId == uid && auth.currentUser?.uid == uid) { "You can only update your own lottery." }
+            check(current.listingRevision == original.listingRevision) { "This lottery changed. Reopen the form before saving." }
+            val sites = (current.offeredCampsiteIds() + draft.offeredCampsiteIds()).distinct().associateWith { id ->
+                transaction.get(db.collection("campsites").document(id)).toObject(Campsite::class.java)
+                    ?.copy(id = id) ?: error("A campsite is no longer available.")
+            }
+            check(sites.values.all { it.ownerId == uid }) { "You can only manage your own campsites." }
+            val updated = updatedLotteryListing(current, draft)
+            val error = lotteryListingError(updated, updated.offeredCampsiteIds().map { sites.getValue(it) })
+            require(error == null) { error.orEmpty() }
+            transaction.update(document, mapOf(
+                "campsiteId" to updated.campsiteId, "campsiteIds" to updated.campsiteIds,
+                "numberOfWinners" to updated.numberOfWinners, "useMaxCapacity" to updated.useMaxCapacity,
+                "waitingListCapacity" to updated.waitingListCapacity,
+                "registrationStartDate" to updated.registrationStartDate, "registrationEndDate" to updated.registrationEndDate,
+                "bookingStartDate" to updated.bookingStartDate, "bookingEndDate" to updated.bookingEndDate,
+                "stayStartDate" to updated.stayStartDate, "stayEndDate" to updated.stayEndDate,
+                "listingRevision" to updated.listingRevision
+            ))
+            transaction.set(notice, mapOf(
+                "lotteryId" to original.id, "ownerId" to uid, "recipientIds" to current.participantIds(),
+                "kind" to "updated",
+                "title" to "Lottery updated",
+                "message" to "${updated.offeredCampsiteIds().joinToString(", ") { sites.getValue(it).name }}: " +
+                    "registration ${updated.registrationStartDate} to ${updated.registrationEndDate}; " +
+                    "booking ${updated.bookingStartDate} to ${updated.bookingEndDate}; " +
+                    "stay ${updated.stayStartDate} to ${updated.stayEndDate}.",
+                "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+            ))
+        }.await()
+    }
+
+    /** Deletes an undrawn listing and keeps its cancellation notice independently of that document. */
+    suspend fun deleteLottery(original: Lottery) {
+        val uid = auth.currentUser?.uid ?: error("Please sign in.")
+        val document = db.collection("lotteries").document(original.id)
+        val notice = db.collection("lotteryNotices").document("${original.id}_deleted")
+        db.runTransaction { transaction ->
+            val current = transaction.get(document).toObject(Lottery::class.java)?.copy(id = original.id)
+                ?: error("This lottery is no longer available.")
+            check(current.ownerId == uid && auth.currentUser?.uid == uid) { "You can only delete your own lottery." }
+            check(current.listingRevision == original.listingRevision) { "This lottery changed. Reopen the form before deleting." }
+            val siteNames = current.offeredCampsiteIds().map { id ->
+                val site = transaction.get(db.collection("campsites").document(id)).toObject(Campsite::class.java)
+                check(site?.ownerId == uid) { "You can only manage your own campsites." }
+                site!!.name
+            }
+            requireLotteryEditable(current)
+            transaction.set(notice, mapOf(
+                "lotteryId" to original.id, "ownerId" to uid, "recipientIds" to current.participantIds(),
+                "kind" to "deleted",
+                "title" to "Lottery deleted", "message" to "The owner deleted the lottery for ${siteNames.joinToString(", ")}. Your entry is no longer active.",
+                "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+            ))
+            transaction.delete(document)
+        }.await()
     }
 
     /**
@@ -96,9 +167,11 @@ class LotteryService {
             !lottery.drawCompleted && today >= lottery.registrationStartDate && today <= lottery.registrationEndDate
         }
         return lotteries.mapNotNull { lottery ->
-            val campsite = db.collection("campsites").document(lottery.campsiteId).get().await()
-                .toObject(Campsite::class.java)?.copy(id = lottery.campsiteId)
-            campsite?.takeIf { it.published }?.let { LotteryListing(lottery, it) }
+            val sites = lottery.offeredCampsiteIds().mapNotNull { id ->
+                db.collection("campsites").document(id).get().await()
+                    .toObject(Campsite::class.java)?.copy(id = id)?.takeIf { it.published }
+            }
+            sites.firstOrNull()?.let { LotteryListing(lottery, it, sites) }
         }.sortedWith(compareBy({ it.lottery.registrationEndDate }, { it.campsite.name }))
     }
 
@@ -109,10 +182,7 @@ class LotteryService {
     ): Lottery? {
         require(campsiteId.isNotBlank() && '/' !in campsiteId) { "Provide a valid campsite document ID." }
         val today = lotteryAlbertaDate(nowMillis)
-        return db.collection("lotteries")
-            .whereEqualTo("campsiteId", campsiteId)
-            .get().await().documents
-            .mapNotNull { snapshot -> snapshot.toObject(Lottery::class.java)?.copy(id = snapshot.id) }
+        return getLotteriesForCampsite(campsiteId)
             .filter { lottery ->
                 !lottery.drawCompleted &&
                     today >= lottery.registrationStartDate &&
@@ -146,10 +216,12 @@ class LotteryService {
             require(lottery.campsiteId.isNotBlank() && '/' !in lottery.campsiteId) {
                 "This lottery has no valid campsite."
             }
-            val siteSnapshot = transaction.get(db.collection("campsites").document(lottery.campsiteId))
-            val campsite = siteSnapshot.toObject(Campsite::class.java)
-                ?: error("This campsite is no longer available.")
-            check(siteSnapshot.exists() && campsite.published) { "This campsite is not available to entrants." }
+            val sites = lottery.offeredCampsiteIds().map { id ->
+                transaction.get(db.collection("campsites").document(id)).toObject(Campsite::class.java)
+                    ?.copy(id = id) ?: error("This campsite is no longer available.")
+            }
+            val campsite = sites.filter { it.published && it.ownerId == lottery.ownerId }.maxByOrNull { it.maxOccupancy ?: 0 }
+                ?: error("This campsite is not available to entrants.")
             check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
             val joinError = waitingListJoinError(
                 lottery = lottery,
@@ -225,9 +297,11 @@ class LotteryService {
             require(lottery.campsiteId.isNotBlank() && '/' !in lottery.campsiteId) {
                 "This lottery has no valid campsite."
             }
-            val site = transaction.get(db.collection("campsites").document(lottery.campsiteId))
-            check(site.exists() && site.getString("ownerId") == uid && auth.currentUser?.uid == uid) {
-                "This campsite does not belong to your account."
+            for (id in lottery.offeredCampsiteIds()) {
+                val site = transaction.get(db.collection("campsites").document(id))
+                check(site.exists() && site.getString("ownerId") == uid && auth.currentUser?.uid == uid) {
+                    "This campsite does not belong to your account."
+                }
             }
             val drawn = prepareLotteryDraw(lottery, System.currentTimeMillis())
             if (!lottery.drawCompleted) {
@@ -252,17 +326,12 @@ class LotteryService {
      */
     suspend fun getCurrentLottery(campsiteId: String): Lottery? {
         require(campsiteId.isNotBlank() && '/' !in campsiteId) { "Provide a valid campsite document ID." }
-        val result = db.collection("lotteries")
-            .whereEqualTo("campsiteId", campsiteId)
-            .get().await()
-        return currentLottery(result.documents.mapNotNull { doc ->
-            doc.toObject(Lottery::class.java)?.copy(id = doc.id)
-        })
+        return currentLottery(getLotteriesForCampsite(campsiteId))
     }
 }
 
 /** A lottery paired with the campsite information required by the entrant UI. */
-data class LotteryListing(val lottery: Lottery, val campsite: Campsite)
+data class LotteryListing(val lottery: Lottery, val campsite: Campsite, val campsites: List<Campsite> = listOf(campsite))
 
 /**
  * Returns a displayable reason an entrant cannot join, or null when joining is valid.
@@ -288,9 +357,9 @@ internal fun waitingListJoinError(
         groupSize <= 0 -> "Party size must be at least 1."
         maximum == null || maximum <= 0 -> "This campsite does not have a valid maximum occupancy."
         groupSize > maximum -> "Party size cannot exceed this campsite's maximum occupancy of $maximum."
-        lottery.waitingListCapacity <= 0 -> "This lottery's waiting list is unavailable."
+        lottery.waitingListCapacity < 0 -> "This lottery's waiting list is unavailable."
         alreadyEntered -> "You are already on this lottery's waiting list."
-        lottery.registered.distinct().size >= lottery.waitingListCapacity -> "This lottery's waiting list is full."
+        lottery.waitingListCapacity > 0 && lottery.registered.distinct().size >= lottery.waitingListCapacity -> "This lottery's waiting list is full."
         lottery.drawCompleted -> "This lottery has already been drawn."
         today < lottery.registrationStartDate -> "Registration for this lottery has not opened yet."
         today > lottery.registrationEndDate -> "Registration for this lottery has closed."
@@ -436,7 +505,13 @@ internal fun validateLottery(lottery: Lottery) {
         "The lottery must belong to a campsite and its owner."
     }
     require(lottery.numberOfWinners > 0) { "Enter a positive whole number of winners." }
-    require(lottery.waitingListCapacity > 0) { "The waiting list must allow at least one entrant." }
+    val ids = lottery.offeredCampsiteIds()
+    require(ids.size <= MAX_LOTTERY_CAMPSITES) { "A lottery can include at most $MAX_LOTTERY_CAMPSITES campsites." }
+    require(ids.all { it.isNotBlank() && '/' !in it } && lottery.campsiteId in ids) { "Select valid campsites."
+    }
+    require(ids.distinct().size == ids.size) { "Duplicate campsites are not allowed." }
+    val waitlistError = lotteryWaitlistCapacityError(lottery.waitingListCapacity, lottery.numberOfWinners)
+    require(waitlistError == null) { waitlistError.orEmpty() }
     val dates = listOf(lottery.registrationStartDate, lottery.registrationEndDate,
         lottery.bookingStartDate, lottery.bookingEndDate, lottery.stayStartDate, lottery.stayEndDate)
     val parser = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }

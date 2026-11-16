@@ -50,6 +50,19 @@ class LotteryNotificationService(private val context: Context) {
         createChannel()
         val loading = mutableSetOf<String>()
         var listening = true
+        // Separate durable notices survive deletion of the lottery document.
+        val notices = db.collection("lotteryNotices")
+            .whereArrayContains("recipientIds", user.id)
+            .addSnapshotListener { snapshot, _ ->
+                if (!listening) return@addSnapshotListener
+                snapshot?.documents?.forEach { document ->
+                    val key = "${user.id}_notice_${document.id}"
+                    if (!seen.getBoolean(key, false) && showNotice(
+                            document.id, document.getString("title").orEmpty(),
+                            document.getString("message").orEmpty()
+                        )) seen.edit().putBoolean(key, true).apply()
+                }
+            }
         val registration = db.collection("lotteries")
             .whereArrayContains("registered", user.id)
             .addSnapshotListener { snapshot, _ ->
@@ -76,7 +89,26 @@ class LotteryNotificationService(private val context: Context) {
             // A campsite lookup may still finish after notifications are turned off.
             listening = false
             registration.remove()
+            notices.remove()
         }
+    }
+
+    /** Delivers a persisted owner change notice once on this device, respecting OS permission. */
+    private fun showNotice(id: String, title: String, message: String): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED) return false
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(context, id.hashCode(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title).setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(pendingIntent).setAutoCancel(true).build()
+        NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
+        return true
     }
 
     private fun show(result: LotteryResult, lottery: Lottery, campsiteName: String): Boolean {

@@ -1,7 +1,7 @@
 package com.example.campsitereservationapp.model
 
 /**
- * An owner's lottery for reservation opportunities at one campsite, stored at
+ * An owner's lottery for reservation opportunities at one or more campsites, stored at
  * `lotteries/{id}` in Firestore. Linked users and campsites are referenced by ID.
  *
  * Dates are date-only `yyyy-MM-dd` strings, matching [Campsite] and [Reservation].
@@ -18,9 +18,9 @@ package com.example.campsitereservationapp.model
  * @constructor Creates a lottery value without performing validation or saving it.
  * @property id Firestore document ID, generated once for a creation attempt and its retries.
  * @property ownerId Firebase Authentication UID of the campsite owner.
- * @property campsiteId Document ID of the campsite offered by this lottery.
+ * @property campsiteId Primary campsite document ID retained for existing app integrations.
  * @property numberOfWinners Positive number of reservation opportunities (the form's capacity).
- * Must be strictly below the campsite's current maximum occupancy unless [useMaxCapacity] is true.
+ * Must be strictly below the combined current occupancy unless [useMaxCapacity] is true.
  * @property registrationStartDate First date entrants may join the lottery waiting list.
  * @property registrationEndDate Last date entrants may join, on or after registration start.
  * @property bookingStartDate First date selected entrants may reserve, after registration ends.
@@ -31,13 +31,16 @@ package com.example.campsitereservationapp.model
  * @property registered Firebase user IDs registered for the lottery waiting list.
  * @property registeredGroupSizes Party size selected by each registered user, keyed by Firebase UID.
  * Older lottery documents can omit this map; their registrations remain valid.
- * @property waitingListCapacity Maximum number of distinct entrants accepted before registration is full.
+ * @property campsiteIds Campsites offered together. Empty preserves legacy single-campsite documents.
+ * @property waitingListCapacity Maximum distinct entrants; zero means no optional limit.
  * @property pending Firebase user IDs selected and awaiting a reservation decision.
  * @property booked Reservations made through this lottery. Confirmed ones count toward
  * [numberOfWinners], and their nights cannot be booked again.
  * @property useMaxCapacity Whether the owner selected Max. When true, [numberOfWinners]
- * must equal the campsite's current maximum occupancy.
+ * must equal the selected campsites' combined current maximum occupancy.
  * @property drawCompleted Whether the service has already saved the initial draw, including an empty draw.
+ * @property listingRevision Owner update counter used to reject stale form submissions.
+ * @property closedCampsiteId Campsite whose removal closed this listing, or empty while unaffected.
  * @see com.example.campsitereservationapp.service.LotteryService
  */
 data class Lottery(
@@ -58,7 +61,10 @@ data class Lottery(
     val booked: List<Reservation> = emptyList(),
     val useMaxCapacity: Boolean = false,
     val drawCompleted: Boolean = false,
-    val cancelledEntrantIds: List<String> = emptyList()
+    val cancelledEntrantIds: List<String> = emptyList(),
+    val campsiteIds: List<String> = emptyList(),
+    val listingRevision: Long = 0,
+    val closedCampsiteId: String = ""
 ) {
     /**
      * Randomly selects distinct user IDs from [registered], without changing this lottery.
@@ -85,3 +91,9 @@ data class Lottery(
 
 /** Default safety limit for a lottery waiting list when the owner has not configured one. */
 const val DEFAULT_WAITING_LIST_CAPACITY = 1000
+
+/** Keeps ownership validation within Firestore Security Rules' document-access budget. */
+const val MAX_LOTTERY_CAMPSITES = 8
+
+/** Resolves new multi-campsite listings and existing single-campsite documents uniformly. */
+fun Lottery.offeredCampsiteIds(): List<String> = campsiteIds.ifEmpty { listOf(campsiteId) }

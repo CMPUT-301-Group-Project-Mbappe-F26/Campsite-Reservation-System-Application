@@ -110,6 +110,35 @@ test("missing campsite and ownership mismatches are rejected without writing", a
   }
 });
 
+test("multi-campsite drawing checks every owner and preserves the shared offering", async () => {
+  const shared = { ...lottery, campsiteIds: ["camp", "second"] };
+  const db = store({ "lotteries/draw": shared, "campsites/camp": { ownerId: "owner" },
+    "campsites/second": { ownerId: "owner" } });
+  assert.equal((await drawLotteryDocument(db, { path: "lotteries/draw" }, { now, dryRun: false })).status, "drawn");
+  assert.deepEqual(db.records.get("lotteries/draw").campsiteIds, shared.campsiteIds);
+  const invalid = store({ "lotteries/draw": shared, "campsites/camp": { ownerId: "owner" },
+    "campsites/second": { ownerId: "other" } });
+  await assert.rejects(drawLotteryDocument(invalid, { path: "lotteries/draw" }, { now, dryRun: false }), DrawDataError);
+  assert.equal(invalid.writes, 0);
+});
+
+test("duplicate campsite offerings cannot be drawn", async () => {
+  const db = store({ "lotteries/draw": { ...lottery, campsiteIds: ["camp", "camp"] },
+    "campsites/camp": { ownerId: "owner" } });
+  await assert.rejects(drawLotteryDocument(db, { path: "lotteries/draw" }, { now, dryRun: false }), DrawDataError);
+  assert.equal(db.writes, 0);
+});
+
+test("malformed campsite ID lists are rejected and empty legacy lists still draw", async () => {
+  for (const campsiteIds of ["camp", {}, ["camp", "bad/id"]]) {
+    const db = store({ "lotteries/draw": { ...lottery, campsiteIds }, "campsites/camp": { ownerId: "owner" } });
+    await assert.rejects(drawLotteryDocument(db, { path: "lotteries/draw" }, { now, dryRun: false }), DrawDataError);
+    assert.equal(db.writes, 0);
+  }
+  const db = store({ "lotteries/draw": { ...lottery, campsiteIds: [] }, "campsites/camp": { ownerId: "owner" } });
+  assert.equal((await drawLotteryDocument(db, { path: "lotteries/draw" }, { now, dryRun: false })).status, "drawn");
+});
+
 test("missing and not-yet-due lotteries do not write", async () => {
   const db = store();
   assert.equal((await drawLotteryDocument(db, { path: "lotteries/missing" }, { now, dryRun: false })).status, "skipped");

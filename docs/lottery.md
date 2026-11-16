@@ -26,7 +26,7 @@ The app module uses Dokka 2.2.0 with the v2 Gradle plugin configuration. See the
 
 ## Overview
 
-`Lottery` represents one owner's lottery for one campsite. Its Kotlin definition is
+`Lottery` represents one owner's lottery for one or more owned campsites. Its Kotlin definition is
 [`Lottery.kt`](../app/src/main/java/com/example/campsitereservationapp/model/Lottery.kt).
 `LotteryService` saves each object as a document at `lotteries/{id}` in Firestore.
 User and campsite IDs reference separate documents; their full objects are not embedded.
@@ -37,7 +37,10 @@ User and campsite IDs reference separate documents; their full objects are not e
 | --- | --- | --- |
 | `id` | `String` | Firestore document ID, reused when retrying the same submission. |
 | `ownerId` | `String` | Owner's Firebase Authentication UID. |
-| `campsiteId` | `String` | ID of the campsite offered by the lottery. |
+| `campsiteId` | `String` | Primary campsite ID retained for compatibility. |
+| `campsiteIds` | `List<String>` | All offered campsite IDs. Empty falls back to the legacy primary ID. |
+| `listingRevision` | `Long` | Incremented by each owner update; prevents stale edits/deletions. |
+| `closedCampsiteId` | `String` | Removed campsite that closed this lottery; empty otherwise. |
 | `numberOfWinners` | `Int` | Number of reservation opportunities; called capacity in the form. |
 | `registrationStartDate` | `String` | First date entrants can join the waiting list. |
 | `registrationEndDate` | `String` | Last registration date. |
@@ -47,7 +50,7 @@ User and campsite IDs reference separate documents; their full objects are not e
 | `stayEndDate` | `String` | Exclusive checkout end of the offered stay period. |
 | `registered` | `List<String>` | User IDs registered for the waiting list. |
 | `registeredGroupSizes` | `Map<String, Int>` | Party size chosen by each registered user, keyed by UID. |
-| `waitingListCapacity` | `Int` | Maximum distinct entrants accepted; defaults to 1,000. |
+| `waitingListCapacity` | `Int` | Optional maximum entrants; zero is unlimited. Legacy/default documents retain 1,000. |
 | `pending` | `List<String>` | Selected user IDs awaiting a reservation decision. |
 | `booked` | `List<Reservation>` | Reservations made through this lottery. |
 | `useMaxCapacity` | `Boolean` | Whether the owner selected the Max checkbox. |
@@ -60,6 +63,39 @@ incomplete drafts. A default object cannot be submitted as a valid lottery.
 
 ## Creation rules
 
+The shared create/edit form supports up to eight owned campsites and rejects duplicates.
+The limit keeps every campsite's ownership check within Firestore Security Rules' access-call budget.
+One winner count applies to the whole lottery. The Max rule uses the sum of selected
+campsites' occupancy, while a party must fit one individual campsite. Every selected
+campsite must support the offered stay period. Winners choose a campsite when booking;
+reservations at another campsite in the same lottery do not block its nights.
+
+New forms leave the waiting-list limit disabled (stored as zero). When enabled it must
+be a positive integer strictly greater than the winner count. Existing limits are prefilled.
+Updates cannot reduce the limit below current enrollment.
+
+Owners open an undrawn lottery from their campsite details to edit the same prefilled
+form. Update and Delete each require an **Are you sure?** confirmation with Proceed/Cancel.
+Both operations recheck ownership, revision, and draw state in a Firestore transaction.
+Updates preserve concurrent registrations. Drawn lotteries and lotteries with pending
+winners or bookings cannot be edited or deleted. A racing automatic draw therefore
+cannot be overwritten by an owner mutation.
+
+Each successful update/delete also creates a document in `lotteryNotices` containing
+`lotteryId`, `ownerId`, distinct `recipientIds`, `kind`, `title`, `message`, and a server `createdAt`.
+Update notice IDs are `{lotteryId}_{listingRevision}`; deletion notices use `{lotteryId}_deleted`.
+The notice is saved atomically with the mutation and survives lottery deletion. The
+existing notification service listens for notices addressed to the signed-in user and
+delivers each once per device, subject to notification opt-out and OS permission. This
+uses the existing app-side delivery model; it is not an FCM server push service.
+
+**Firestore permissions:** rules are managed in Firebase Console's Firestore **Rules**
+tab. They permit owner editing/deletion, entrant join/leave, shared campsite verification,
+and immutable notices restricted to recipients/admins. Owner updates/deletions require
+a new server-timestamped notice in the same atomic commit, addressed to exactly the
+lottery's participants. Existing reservation, profile, admin, messaging, cancellation,
+and rejection permissions are retained.
+
 - The signed-in user's UID must match both `ownerId` and the stored campsite's owner.
 - All six dates are required and must be valid `yyyy-MM-dd` dates.
 - Registration and booking can each span a single date or multiple dates.
@@ -71,7 +107,7 @@ incomplete drafts. A default object cannot be submitted as a valid lottery.
   nights must be available weekdays; the reservation flow filters closed nights
   between them, so a lottery can span multiple weekends.
 - Capacity must be a positive integer. With Max unchecked, it must be strictly less
-  than the campsite's current `maxOccupancy`. With Max checked, it must equal that maximum.
+  than the selected campsites' combined `maxOccupancy`. With Max checked, it must equal that maximum.
 - A campsite without a positive maximum occupancy cannot be used to create a lottery.
 
 The form checks dates and capacity before enabling Start Lottery. The service
