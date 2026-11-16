@@ -9,18 +9,29 @@ import java.util.TimeZone
 
 /*
  * The Reservation model and the booking rules for reserving a campsite won in a lottery
- * (US 01.04.01, US 01.04.03, US 01.06.01).
+ * (US 01.04.01, US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01), and the filters an owner
+ * uses to view and reject a campsite's reservations and booked dates (US 02.06.01,
+ * US 02.07.01, US 02.07.02, US 02.07.03, US 02.08.01).
  *
  * The functions here do no database work, so the screens, ReservationService and unit
  * tests all share the same rules.
  *
- * Profile deletion cancels active reservations. The separate cancellation flow
- * (US 01.07.01) is still outstanding. Dates use the device's time zone.
+ * Outstanding issues: cancelling or rejecting does not yet notify the entrant (US 01.07.02),
+ * and cancellation policies are shown but not enforced because the app takes no payments.
+ * Dates use the device's time zone.
  */
 
 /** Status of a reservation that is booked and counts toward its lottery's capacity. */
 const val RESERVATION_CONFIRMED = "Confirmed"
+
+/** Status of a reservation the entrant cancelled; its nights and spot are free again. */
 const val RESERVATION_CANCELLED = "Cancelled"
+
+/** Status of a reservation the campsite owner rejected; its nights and spot are free again. */
+const val RESERVATION_REJECTED = "Rejected"
+
+/** Label shown for a confirmed stay that has already ended. It is never stored. */
+const val RESERVATION_COMPLETED = "Completed"
 
 /**
  * An entrant's booking of a campsite, stored at `reservations/{id}` in Firestore and
@@ -35,7 +46,7 @@ const val RESERVATION_CANCELLED = "Cancelled"
  * @property campsiteName Campsite name saved at booking time, so the list loads without the campsite.
  * @property checkInDate First night of the stay.
  * @property checkOutDate Day the entrant leaves; this night is not part of the stay.
- * @property status Booking status, either [RESERVATION_CONFIRMED] or [RESERVATION_CANCELLED].
+ * @property status Booking status: [RESERVATION_CONFIRMED], [RESERVATION_CANCELLED] or [RESERVATION_REJECTED].
  */
 data class Reservation(
     val id: String = "",
@@ -49,11 +60,11 @@ data class Reservation(
 )
 
 /**
- * Keeps confirmed stays that have not ended, soonest first.
+ * Keeps confirmed stays that have not ended, soonest first (US 01.06.01, US 02.07.01).
  *
  * A stay checking out today still counts as active. yyyy-MM-dd text sorts in date order.
  *
- * @param reservations An entrant's reservations.
+ * @param reservations Reservations for an entrant or a campsite.
  * @param today Today's date as yyyy-MM-dd.
  * @return The active reservations, sorted by check-in date.
  */
@@ -61,6 +72,87 @@ fun activeReservations(reservations: List<Reservation>, today: String): List<Res
     reservations
         .filter { it.status == RESERVATION_CONFIRMED && it.checkOutDate >= today }
         .sortedBy { it.checkInDate }
+
+/**
+ * Keeps confirmed stays that have already ended, most recent first (US 01.06.02, US 02.07.02).
+ *
+ * A stay checking out today is still active, so it becomes past the next day. Cancelled
+ * reservations are left out because the entrant never stayed.
+ *
+ * @param reservations Reservations for an entrant or a campsite.
+ * @param today Today's date as yyyy-MM-dd.
+ * @return The past reservations, latest check-in first.
+ */
+fun pastReservations(reservations: List<Reservation>, today: String): List<Reservation> =
+    reservations
+        .filter { it.status == RESERVATION_CONFIRMED && it.checkOutDate < today }
+        .sortedByDescending { it.checkInDate }
+
+/**
+ * Keeps reservations that will not go ahead, latest check-in first (US 02.07.03).
+ *
+ * This includes ones the entrant cancelled and ones the owner rejected (US 02.08.01).
+ *
+ * @param reservations Reservations for an entrant or a campsite.
+ * @return The cancelled and rejected reservations, latest check-in first.
+ */
+fun cancelledReservations(reservations: List<Reservation>): List<Reservation> =
+    reservations
+        .filter { it.status == RESERVATION_CANCELLED || it.status == RESERVATION_REJECTED }
+        .sortedByDescending { it.checkInDate }
+
+/**
+ * Checks whether an owner can reject a reservation at their campsite (US 02.08.01).
+ *
+ * Only the campsite's owner can reject, and only a confirmed stay that has not ended yet.
+ *
+ * @param reservation The reservation to reject.
+ * @param campsite The campsite the reservation is for.
+ * @param ownerId Firebase UID of the signed-in user.
+ * @param today Today's date as yyyy-MM-dd.
+ * @return A message suitable for display, or null if the reservation can be rejected.
+ */
+fun rejectError(reservation: Reservation, campsite: Campsite, ownerId: String, today: String): String? = when {
+    reservation.campsiteId != campsite.id -> "This reservation is not for this campsite."
+    !campsite.isOwnedBy(ownerId) -> "Only the campsite owner can reject reservations."
+    reservation.status == RESERVATION_REJECTED -> "This reservation is already rejected."
+    reservation.status != RESERVATION_CONFIRMED -> "Only confirmed reservations can be rejected."
+    reservation.checkOutDate < today -> "This stay has already ended."
+    else -> null
+}
+
+/**
+ * Checks whether an entrant can cancel a reservation (US 01.07.01).
+ *
+ * Only the entrant who booked can cancel, and only before the stay starts. On the
+ * check-in day the stay has started, so it can no longer be cancelled.
+ *
+ * @param reservation The reservation to cancel.
+ * @param entrantId Firebase UID of the signed-in entrant.
+ * @param today Today's date as yyyy-MM-dd.
+ * @return A message suitable for display, or null if the reservation can be cancelled.
+ */
+fun cancelError(reservation: Reservation, entrantId: String, today: String): String? = when {
+    reservation.entrantId != entrantId -> "This reservation does not belong to your account."
+    reservation.status == RESERVATION_CANCELLED -> "This reservation is already cancelled."
+    reservation.status != RESERVATION_CONFIRMED -> "This reservation cannot be cancelled."
+    reservation.checkInDate <= today -> "Your stay has already started, so it can no longer be cancelled."
+    else -> null
+}
+
+/**
+ * Gets the status to show for a reservation.
+ *
+ * A confirmed stay that has ended shows as [RESERVATION_COMPLETED], since the stored status
+ * stays [RESERVATION_CONFIRMED].
+ *
+ * @param reservation The reservation to describe.
+ * @param today Today's date as yyyy-MM-dd.
+ * @return The stored status, or [RESERVATION_COMPLETED] for a finished stay.
+ */
+fun reservationStatusLabel(reservation: Reservation, today: String): String =
+    if (reservation.status == RESERVATION_CONFIRMED && reservation.checkOutDate < today) RESERVATION_COMPLETED
+    else reservation.status
 
 /**
  * Gets today's date in the format used by reservations.
@@ -131,6 +223,23 @@ fun reservationNights(checkIn: String, checkOut: String): List<String> {
         }
     }
 }
+
+/**
+ * Maps each booked night to the reservation that holds it (US 02.06.01).
+ *
+ * Only confirmed reservations book nights; cancelled and rejected ones are left out. If two
+ * reservations claim the same night, the one with the earlier check-in is kept.
+ *
+ * @param reservations Reservations for one campsite.
+ * @return Booked nights as yyyy-MM-dd, each with its reservation.
+ */
+fun bookedNights(reservations: List<Reservation>): Map<String, Reservation> =
+    reservations
+        .filter { it.status == RESERVATION_CONFIRMED }
+        .sortedBy { it.checkInDate }
+        .flatMap { reservation -> reservationNights(reservation.checkInDate, reservation.checkOutDate).map { it to reservation } }
+        .distinctBy { it.first }
+        .toMap()
 
 /**
  * Gets the reservations that count toward a lottery's capacity.

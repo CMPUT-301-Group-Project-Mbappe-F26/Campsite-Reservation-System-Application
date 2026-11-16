@@ -51,7 +51,8 @@ import java.util.Locale
  *
  * Hides other users' unpublished campsites, except from admins. Create Lottery is shown to the owner and
  * opens [LotteryCreation] for the loaded campsite; closing that form returns here.
- * The owner also sees the current lottery's waiting list ([LotteryEntrantsSection]).
+ * The owner also sees the current lottery's waiting list ([LotteryEntrantsSection]) and the
+ * campsite's active, past and cancelled reservations ([CampsiteReservationsSection]).
  * Loading failures display an error with a retry action.
  *
  * @param campsiteId Firestore document ID of the campsite to load.
@@ -292,6 +293,8 @@ fun CampsiteDetailsScreen(
                         }
                         // Only the owner sees who has joined the waiting list
                         if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) LotteryEntrantsSection(site.id)
+                        // Only the owner sees who has booked the campsite (US 02.07.01 to US 02.07.03)
+                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) CampsiteReservationsSection(site.id)
 
                         DetailCard {
                             Text("Description", style = MaterialTheme.typography.titleLarge)

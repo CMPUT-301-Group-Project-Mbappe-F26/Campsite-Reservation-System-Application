@@ -3,8 +3,12 @@ package com.example.campsitereservationapp.service
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.Reservation
+import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
+import com.example.campsitereservationapp.model.RESERVATION_REJECTED
 import com.example.campsitereservationapp.model.activeReservations
+import com.example.campsitereservationapp.model.cancelError
 import com.example.campsitereservationapp.model.declineError
+import com.example.campsitereservationapp.model.rejectError
 import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.model.reservationError
 import com.example.campsitereservationapp.model.offeredCampsiteIds
@@ -14,18 +18,57 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * Handles an entrant's reservations and lottery wins in Firestore (US 01.04.01,
- * US 01.04.03, US 01.06.01).
+ * US 01.04.03, US 01.06.01, US 01.06.02, US 01.07.01), and lets an owner load and reject
+ * their campsite's reservations (US 02.07.01, US 02.07.02, US 02.07.03, US 02.08.01).
  *
  * Reservations are stored at `reservations/{id}`, and each is also copied into its
- * lottery's `booked` list. Booking and declining run in transactions and use the rules
- * in Reservation.kt, so the screens and the database always agree.
+ * lottery's `booked` list. Booking, declining, cancelling and rejecting run in transactions
+ * and use the rules in Reservation.kt, so the screens and the database always agree.
  *
- * Outstanding issues: declining a spot does not yet trigger a redraw for the next
- * entrant (US 02.05.01), and reservations cannot be cancelled yet (US 01.07.01).
+ * Outstanding issues: declining, cancelling or rejecting does not yet trigger a redraw for
+ * the next entrant (US 02.05.01) or send a notification (US 01.07.02).
  */
 class ReservationService {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
+
+    /**
+     * Loads all of the signed-in entrant's reservations, whatever their status or dates.
+     *
+     * Screens split the result with [activeReservations] and [pastReservations], so one
+     * read fills both lists.
+     *
+     * @return Every reservation the entrant has made, in no particular order.
+     * @throws Exception If no user is signed in.
+     */
+    suspend fun getMyReservations(): List<Reservation> {
+        val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
+        val result = db.collection("reservations")
+            .whereEqualTo("entrantId", uid) // Get this entrant's reservations
+            .get().await()
+        check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+        return result.documents.mapNotNull { doc ->
+            doc.toObject(Reservation::class.java)?.copy(id = doc.id) // Use the actual Firestore document ID.
+        }
+    }
+
+    /**
+     * Loads every reservation made at one campsite, for its owner (US 02.07.01 to US 02.07.03).
+     *
+     * Firestore rules only allow this for the campsite's owner. Screens split the result with
+     * [activeReservations], [pastReservations] and [cancelledReservations].
+     *
+     * @param campsiteId Firestore document ID of the campsite.
+     * @return The campsite's reservations, in no particular order.
+     */
+    suspend fun getCampsiteReservations(campsiteId: String): List<Reservation> {
+        val result = db.collection("reservations")
+            .whereEqualTo("campsiteId", campsiteId)
+            .get().await()
+        return result.documents.mapNotNull { doc ->
+            doc.toObject(Reservation::class.java)?.copy(id = doc.id)
+        }
+    }
 
     /**
      * Loads the signed-in entrant's active reservations.
@@ -33,17 +76,8 @@ class ReservationService {
      * @return Confirmed stays that have not ended, soonest first (see [activeReservations]).
      * @throws Exception If no user is signed in.
      */
-    suspend fun getMyActiveReservations(): List<Reservation> {
-        val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
-        val result = db.collection("reservations")
-            .whereEqualTo("entrantId", uid) // Get this entrant's reservations
-            .get().await()
-        check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
-        val reservations = result.documents.mapNotNull { doc ->
-            doc.toObject(Reservation::class.java)?.copy(id = doc.id) // Use the actual Firestore document ID.
-        }
-        return activeReservations(reservations, reservationDateToday())
-    }
+    suspend fun getMyActiveReservations(): List<Reservation> =
+        activeReservations(getMyReservations(), reservationDateToday())
 
     /**
      * Loads one reservation.
@@ -150,5 +184,72 @@ class ReservationService {
             transaction.update(lotteryDoc, "pending", lottery.pending - uid)
             null
         }.await()
+    }
+
+    /**
+     * Cancels one of the signed-in entrant's reservations (US 01.07.01).
+     *
+     * The reservation's status becomes Cancelled, and the entrant is added to the lottery's
+     * `cancelledEntrantIds`, which frees their nights and their spot toward capacity (see
+     * confirmedReservations). This is the same way profile deletion releases bookings, so
+     * the lottery's `booked` list is never rewritten by an entrant.
+     *
+     * @param reservationId Firestore document ID of the reservation.
+     * @return A message explaining why it could not be cancelled, or null on success.
+     * @throws Exception If no user is signed in.
+     */
+    suspend fun cancel(reservationId: String): String? {
+        val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
+        val reservationDoc = db.collection("reservations").document(reservationId)
+        return db.runTransaction { transaction ->
+            val reservation = transaction.get(reservationDoc).toObject(Reservation::class.java)
+                ?: return@runTransaction "This reservation no longer exists."
+            val lotteryDoc = reservation.lotteryId.takeIf { it.isNotBlank() }
+                ?.let { db.collection("lotteries").document(it) }
+            val lottery = lotteryDoc?.let { transaction.get(it).toObject(Lottery::class.java) }
+            val error = cancelError(reservation, uid, reservationDateToday())
+            if (error != null) return@runTransaction error
+            transaction.update(reservationDoc, "status", RESERVATION_CANCELLED)
+            if (lotteryDoc != null && lottery != null && uid !in lottery.cancelledEntrantIds) {
+                transaction.update(lotteryDoc, "cancelledEntrantIds", lottery.cancelledEntrantIds + uid)
+            }
+            null
+        }.await()
+        // US 01.07.02: send the cancellation notification here (on success) once it exists.
+    }
+
+    /**
+     * Rejects a reservation at one of the signed-in owner's campsites (US 02.08.01).
+     *
+     * The reservation's status becomes Rejected, and the entrant is added to the lottery's
+     * `cancelledEntrantIds`, which frees their nights and their spot in the same way as an
+     * entrant's own cancellation.
+     *
+     * @param reservationId Firestore document ID of the reservation.
+     * @return A message explaining why it could not be rejected, or null on success.
+     * @throws Exception If no user is signed in.
+     */
+    suspend fun reject(reservationId: String): String? {
+        val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
+        val reservationDoc = db.collection("reservations").document(reservationId)
+        return db.runTransaction { transaction ->
+            val reservation = transaction.get(reservationDoc).toObject(Reservation::class.java)
+                ?.copy(id = reservationId)
+                ?: return@runTransaction "This reservation no longer exists."
+            val campsite = transaction.get(db.collection("campsites").document(reservation.campsiteId))
+                .toObject(Campsite::class.java)
+                ?: return@runTransaction "This campsite is no longer available."
+            val lotteryDoc = reservation.lotteryId.takeIf { it.isNotBlank() }
+                ?.let { db.collection("lotteries").document(it) }
+            val lottery = lotteryDoc?.let { transaction.get(it).toObject(Lottery::class.java) }
+            val error = rejectError(reservation, campsite.copy(id = reservation.campsiteId), uid, reservationDateToday())
+            if (error != null) return@runTransaction error
+            transaction.update(reservationDoc, "status", RESERVATION_REJECTED)
+            if (lotteryDoc != null && lottery != null && reservation.entrantId !in lottery.cancelledEntrantIds) {
+                transaction.update(lotteryDoc, "cancelledEntrantIds", lottery.cancelledEntrantIds + reservation.entrantId)
+            }
+            null
+        }.await()
+        // US 01.07.02: notify the entrant that their reservation was rejected (on success) once it exists.
     }
 }

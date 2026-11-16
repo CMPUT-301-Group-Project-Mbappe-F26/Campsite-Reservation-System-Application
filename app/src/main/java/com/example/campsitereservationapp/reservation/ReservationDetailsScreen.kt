@@ -1,5 +1,6 @@
 package com.example.campsitereservationapp.reservation
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -8,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -17,23 +19,31 @@ import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.campsite.CampsitePhoto
 import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
 import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
+import com.example.campsitereservationapp.model.RESERVATION_COMPLETED
+import com.example.campsitereservationapp.model.RESERVATION_REJECTED
 import com.example.campsitereservationapp.model.Reservation
+import com.example.campsitereservationapp.model.cancelError
 import com.example.campsitereservationapp.model.formatReservationDate
+import com.example.campsitereservationapp.model.reservationDateToday
+import com.example.campsitereservationapp.model.reservationStatusLabel
 import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /*
- * Details of one of the entrant's reservations, opened from My Reservations (US 01.06.01).
+ * Details of one of the entrant's reservations, opened from My Reservations (US 01.06.01),
+ * where the entrant can also cancel a stay that has not started (US 01.07.01).
  *
  * [ReservationDetailsScreen] loads the reservation and its campsite from Firebase and only
  * shows reservations belonging to the signed-in entrant. [ReservationDetailsContent] only
  * draws them, so intent tests can check the screen without Firebase.
  *
- * Outstanding issues: there is no Cancel Reservation button yet (US 01.07.01).
+ * Outstanding issues: cancelling sends no notification yet (US 01.07.02).
  */
 
 /**
@@ -41,16 +51,20 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * @param reservationId Firestore document ID of the reservation.
  * @param onBack Returns to My Reservations.
+ * @param onOpenMessages Opens the message thread with the campsite owner.
  */
 @Composable
 fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit, onOpenMessages: () -> Unit = {}) {
     val reservationService = remember { ReservationService() }
     val campsiteService = remember { CampsiteService() }
     val entrantId = rememberCampsiteOwnerId()
+    val scope = rememberCoroutineScope()
     var reservation by remember(reservationId, entrantId) { mutableStateOf<Reservation?>(null) }
     var campsite by remember(reservationId, entrantId) { mutableStateOf<Campsite?>(null) }
     var loading by remember(reservationId, entrantId) { mutableStateOf(true) }
     var error by remember(reservationId, entrantId) { mutableStateOf("") }
+    var cancelling by remember(reservationId) { mutableStateOf(false) }
+    var cancelMessage by remember(reservationId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(reservationId, entrantId, refresh) {
@@ -82,6 +96,29 @@ fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit, onOpenMe
         }
     }
 
+    // Cancels the reservation and shows it as Cancelled without reloading the screen.
+    fun cancelReservation() {
+        val booking = reservation ?: return
+        scope.launch {
+            cancelling = true
+            cancelMessage = ""
+            try {
+                val problem = reservationService.cancel(booking.id)
+                if (problem == null) {
+                    reservation = booking.copy(status = RESERVATION_CANCELLED)
+                    cancelMessage = "Your reservation has been cancelled."
+                } else cancelMessage = problem
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("ReservationDetails", "Could not cancel reservation ${booking.id}", e)
+                cancelMessage = "Could not cancel this reservation. Check your connection and try again."
+            } finally {
+                cancelling = false
+            }
+        }
+    }
+
     Column(
         Modifier.fillMaxSize()
             .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
@@ -100,7 +137,14 @@ fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit, onOpenMe
                 Text(error, color = PinedrawColors.Coral)
                 TextButton(onClick = { refresh++ }) { Text("Try again") }
             }
-            else -> reservation?.let { ReservationDetailsContent(it, campsite, onOpenMessages) }
+            else -> reservation?.let { booking ->
+                val canCancel = cancelError(booking, entrantId.orEmpty(), reservationDateToday()) == null
+                ReservationDetailsContent(
+                    booking, campsite, onOpenMessages,
+                    onCancel = if (canCancel) ::cancelReservation else null,
+                    cancelling = cancelling, cancelMessage = cancelMessage
+                )
+            }
         }
     }
 }
@@ -108,18 +152,42 @@ fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit, onOpenMe
 /**
  * Draws a loaded reservation: campsite, status, dates, location and the campsite's rules.
  *
+ * When [onCancel] is given, a Cancel reservation button asks the entrant to confirm before
+ * calling it.
+ *
  * @param booking The reservation to show.
  * @param site The reserved campsite, or null if it could not be loaded; its location and rules are then skipped.
+ * @param onOpenMessages Opens the message thread with the owner, or null to hide that button.
+ * @param onCancel Cancels the reservation after the entrant confirms, or null when it cannot be cancelled.
+ * @param cancelling True while the cancellation is being saved.
+ * @param cancelMessage Result of the last cancel attempt, or blank.
+ * @param today Today's date as yyyy-MM-dd, used to show a finished stay as Completed.
  */
 @Composable
-fun ReservationDetailsContent(booking: Reservation, site: Campsite?, onOpenMessages: (() -> Unit)? = null) {
+fun ReservationDetailsContent(
+    booking: Reservation,
+    site: Campsite?,
+    onOpenMessages: (() -> Unit)? = null,
+    onCancel: (() -> Unit)? = null,
+    cancelling: Boolean = false,
+    cancelMessage: String = "",
+    today: String = reservationDateToday()
+) {
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    val status = reservationStatusLabel(booking, today)
+    val statusColor = when (status) {
+        RESERVATION_CANCELLED, RESERVATION_REJECTED -> PinedrawColors.Coral
+        RESERVATION_COMPLETED -> PinedrawColors.TextMuted
+        else -> PinedrawColors.Lime
+    }
+
     Column(Modifier.verticalScroll(rememberScrollState())) {
         CampsitePhoto(site?.imageUrls?.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             Text(booking.campsiteName.ifBlank { site?.name ?: "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
-            Surface(color = PinedrawColors.Lime.copy(alpha = 0.15f), shape = MaterialTheme.shapes.large) {
-                Text(booking.status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = PinedrawColors.Lime, fontWeight = FontWeight.Bold)
+            Surface(color = statusColor.copy(alpha = 0.15f), shape = MaterialTheme.shapes.large) {
+                Text(status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = statusColor, fontWeight = FontWeight.Bold)
             }
             if (onOpenMessages != null) {
                 OutlinedButton(onClick = onOpenMessages, modifier = Modifier.fillMaxWidth()) {
@@ -136,7 +204,43 @@ fun ReservationDetailsContent(booking: Reservation, site: Campsite?, onOpenMessa
                 Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
                 ReservationRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
             }
+            if (onCancel != null) {
+                OutlinedButton(
+                    onClick = { confirming = true }, enabled = !cancelling, modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PinedrawColors.Coral)
+                ) {
+                    Text(if (cancelling) "Cancelling…" else "Cancel reservation")
+                }
+            }
+            if (cancelMessage.isNotEmpty()) {
+                Text(
+                    cancelMessage,
+                    color = if (booking.status == RESERVATION_CANCELLED) PinedrawColors.TextSecondary else PinedrawColors.Coral
+                )
+            }
         }
+    }
+
+    if (confirming && onCancel != null) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Cancel this reservation?") },
+            text = {
+                Text(
+                    "Your stay from ${formatReservationDate(booking.checkInDate)} to " +
+                        "${formatReservationDate(booking.checkOutDate)} will be released to other " +
+                        "entrants. This cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirming = false; onCancel() }) {
+                    Text("Yes, cancel", color = PinedrawColors.Coral)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = false }) { Text("Keep reservation") }
+            }
+        )
     }
 }
 

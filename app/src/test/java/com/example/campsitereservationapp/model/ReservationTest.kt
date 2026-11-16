@@ -38,6 +38,50 @@ class ReservationTest {
     }
 
     @Test
+    fun pastReservations_keepsStaysThatAlreadyEnded() {
+        val result = pastReservations(listOf(stay("lake-louise", "2026-08-14", "2026-08-16")), today)
+        assertEquals(listOf("lake-louise"), result.map { it.id })
+    }
+
+    @Test
+    fun pastReservations_leavesOutStayEndingToday() {
+        val result = pastReservations(listOf(stay("current", "2026-10-30", today)), today)
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun pastReservations_leavesOutUpcomingStays() {
+        val result = pastReservations(listOf(stay("next-summer", "2027-06-11", "2027-06-13")), today)
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun pastReservations_leavesOutCancelledStays() {
+        val result = pastReservations(listOf(stay("cancelled", "2026-08-14", "2026-08-16", RESERVATION_CANCELLED)), today)
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun pastReservations_sortsMostRecentFirst() {
+        val result = pastReservations(
+            listOf(stay("july", "2026-07-03", "2026-07-05"), stay("september", "2026-09-19", "2026-09-21")),
+            today
+        )
+        assertEquals(listOf("september", "july"), result.map { it.id })
+    }
+
+    @Test
+    fun activeAndPastReservations_splitEveryConfirmedStayExactlyOnce() {
+        val stays = listOf(
+            stay("ended", "2026-09-19", "2026-09-21"),
+            stay("ends-today", "2026-10-30", today),
+            stay("upcoming", "2027-06-11", "2027-06-13")
+        )
+        assertEquals(listOf("ends-today", "upcoming"), activeReservations(stays, today).map { it.id })
+        assertEquals(listOf("ended"), pastReservations(stays, today).map { it.id })
+    }
+
+    @Test
     fun formatReservationDate_showsReadableDate() {
         assertEquals("Jun 11, 2027", formatReservationDate("2027-06-11"))
     }
