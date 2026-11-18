@@ -10,6 +10,7 @@ import kotlinx.coroutines.tasks.await
 import com.google.firebase.firestore.ListenerRegistration
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.User
+import com.example.campsitereservationapp.model.participatingOwnerIds
 import java.util.UUID
 
 /**
@@ -240,10 +241,14 @@ class CampsiteService {
                 if (lottery != null && isLotteryActive(lottery)) document.reference to lottery else null
             }
             for ((reference, lottery) in active) {
+                check(asAdmin || lottery.participatingOwnerIds().size == 1) {
+                    "Withdraw this campsite from shared lotteries before deleting it. Other owners' campsites cannot be removed by your deletion."
+                }
                 val closed = closeLotteryForRemovedCampsite(lottery)
                 transaction.update(reference, mapOf(
                     "registered" to closed.registered,
                     "registeredGroupSizes" to emptyMap<String, Int>(),
+                    "campsiteInvitations" to emptyMap<String, String>(),
                     "pending" to closed.pending,
                     "closedCampsiteId" to campsiteId,
                     "drawCompleted" to closed.drawCompleted
@@ -277,6 +282,6 @@ internal fun isLotteryActive(lottery: Lottery): Boolean =
  * @return A closed copy of the lottery.
  */
 internal fun closeLotteryForRemovedCampsite(lottery: Lottery): Lottery =
-    lottery.copy(registered = emptyList(), pending = emptyList(), drawCompleted = true)
+    lottery.copy(registered = emptyList(), pending = emptyList(), drawCompleted = true, campsiteInvitations = emptyMap())
 
 

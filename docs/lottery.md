@@ -26,7 +26,9 @@ The app module uses Dokka 2.2.0 with the v2 Gradle plugin configuration. See the
 
 ## Overview
 
-`Lottery` represents one owner's lottery for one or more owned campsites. Its Kotlin definition is
+`Lottery` represents a coordinated lottery for one or more accepted campsites, possibly
+from multiple owners. See [shared owner lotteries](shared-lotteries.md) for invitations,
+consent, ownership boundaries and the required scoped Firestore permission update. Its Kotlin definition is
 [`Lottery.kt`](../app/src/main/java/com/example/campsitereservationapp/model/Lottery.kt).
 `LotteryService` saves each object as a document at `lotteries/{id}` in Firestore.
 User and campsite IDs reference separate documents; their full objects are not embedded.
@@ -41,6 +43,11 @@ User and campsite IDs reference separate documents; their full objects are not e
 | `campsiteIds` | `List<String>` | All offered campsite IDs. Empty falls back to the legacy primary ID. |
 | `listingRevision` | `Long` | Incremented by each owner update; prevents stale edits/deletions. |
 | `closedCampsiteId` | `String` | Removed campsite that closed this lottery; empty otherwise. |
+| `campsiteOwners` | `Map<String, String>` | Accepted campsite owner UIDs; legacy entries fall back to the coordinator. |
+| `campsiteInvitations` | `Map<String, String>` | Pending campsite-to-owner invitations, excluded from the offering. |
+| `collaborationAction` | `String` | Last role-scoped invitation or membership operation. |
+| `collaborationCampsiteId` | `String` | Target campsite for the membership operation. |
+| `rejectedReservationId` | `String` | Reservation authorizing an owning contributor's rejection. |
 | `numberOfWinners` | `Int` | Number of reservation opportunities; called capacity in the form. |
 | `registrationStartDate` | `String` | First date entrants can join the waiting list. |
 | `registrationEndDate` | `String` | Last registration date. |
@@ -63,7 +70,9 @@ incomplete drafts. A default object cannot be submitted as a valid lottery.
 
 ## Creation rules
 
-The shared create/edit form supports up to eight owned campsites and rejects duplicates.
+The shared create/edit form supports up to eight campsites and rejects duplicates.
+The coordinator adds owned campsites directly; foreign campsites require explicit acceptance
+through the owner collaboration panel. Pending invitations count toward the eight slots.
 The limit keeps every campsite's ownership check within Firestore Security Rules' access-call budget.
 One winner count applies to the whole lottery. The Max rule uses the sum of selected
 campsites' occupancy, while a party must fit one individual campsite. Every selected
@@ -77,7 +86,9 @@ Updates cannot reduce the limit below current enrollment.
 Owners open an undrawn lottery from their campsite details to edit the same prefilled
 form. Update and Delete each require an **Are you sure?** confirmation with Proceed/Cancel.
 Both operations recheck ownership, revision, and draw state in a Firestore transaction.
-Updates preserve concurrent registrations. Drawn lotteries and lotteries with pending
+Updates preserve concurrent registrations. Other owners' contributions cannot be removed
+through this form; changing shared dates requires their consent again.
+Drawn lotteries and lotteries with pending
 winners or bookings cannot be edited or deleted. A racing automatic draw therefore
 cannot be overwritten by an owner mutation.
 
@@ -96,7 +107,8 @@ a new server-timestamped notice in the same atomic commit, addressed to exactly 
 lottery's participants. Existing reservation, profile, admin, messaging, cancellation,
 and rejection permissions are retained.
 
-- The signed-in user's UID must match both `ownerId` and the stored campsite's owner.
+- Creation uses only the signed-in coordinator's own campsites. Foreign campsites are
+  added only by their invited current owner accepting the lottery's terms.
 - All six dates are required and must be valid `yyyy-MM-dd` dates.
 - Registration and booking can each span a single date or multiple dates.
 - Registration must end on an earlier calendar date than booking starts.

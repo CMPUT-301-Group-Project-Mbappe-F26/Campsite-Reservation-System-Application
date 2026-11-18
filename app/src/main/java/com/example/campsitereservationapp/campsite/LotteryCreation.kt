@@ -32,6 +32,9 @@ import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.offeredCampsiteIds
 import com.example.campsitereservationapp.model.MAX_LOTTERY_CAMPSITES
+import com.example.campsitereservationapp.model.participatingOwnerIds
+import com.example.campsitereservationapp.service.updatedLotteryListing
+import com.example.campsitereservationapp.service.lotteryTermsChanged
 import com.example.campsitereservationapp.service.lotteryListingError
 import com.example.campsitereservationapp.service.lotteryCapacityError
 import com.example.campsitereservationapp.service.validateLottery
@@ -65,7 +68,7 @@ import kotlinx.coroutines.launch
 fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: Lottery? = null) {
     val formKey = existingLottery?.id ?: campsite.id
     val submission: LotteryCreationViewModel = viewModel(key = "lottery-${campsite.ownerId}-$formKey")
-    LaunchedEffect(formKey) { submission.loadCampsites() }
+    LaunchedEffect(formKey) { submission.loadCampsites(existingLottery) }
     var selectedIds by rememberSaveable(formKey) {
         mutableStateOf(ArrayList(existingLottery?.offeredCampsiteIds() ?: listOf(campsite.id)))
     }
@@ -78,21 +81,27 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
     var waitlistLimit by rememberSaveable(formKey) { mutableStateOf(existingLottery?.waitingListCapacity?.takeIf { it > 0 }?.toString().orEmpty()) }
     var winners by rememberSaveable(formKey) { mutableStateOf(existingLottery?.numberOfWinners?.toString().orEmpty()) }
     var useMaxCapacity by rememberSaveable(formKey) { mutableStateOf(existingLottery?.useMaxCapacity ?: false) }
-    val maximum = selectedSites.takeIf { it.isNotEmpty() && it.all { site -> (site.maxOccupancy ?: 0) > 0 } }
-        ?.sumOf { it.maxOccupancy!! }
-    val winnerCount = if (useMaxCapacity) maximum ?: 0 else winners.toIntOrNull() ?: 0
-    val capacityError = if (useMaxCapacity || winners.isNotBlank() || maximum == null || maximum <= 0)
-        lotteryCapacityError(winnerCount, maximum, useMaxCapacity) else null
     var registrationStart by rememberSaveable(formKey) { mutableStateOf(existingLottery?.registrationStartDate.orEmpty()) }
     var registrationEnd by rememberSaveable(formKey) { mutableStateOf(existingLottery?.registrationEndDate.orEmpty()) }
     var bookingStart by rememberSaveable(formKey) { mutableStateOf(existingLottery?.bookingStartDate.orEmpty()) }
     var bookingEnd by rememberSaveable(formKey) { mutableStateOf(existingLottery?.bookingEndDate.orEmpty()) }
     var stayStart by rememberSaveable(formKey) { mutableStateOf(existingLottery?.stayStartDate.orEmpty()) }
     var stayEnd by rememberSaveable(formKey) { mutableStateOf(existingLottery?.stayEndDate.orEmpty()) }
+    val changedPeriods = existingLottery != null && listOf(registrationStart, registrationEnd, bookingStart, bookingEnd, stayStart, stayEnd) !=
+        listOf(existingLottery.registrationStartDate, existingLottery.registrationEndDate, existingLottery.bookingStartDate,
+            existingLottery.bookingEndDate, existingLottery.stayStartDate, existingLottery.stayEndDate)
+    val capacitySites = if (changedPeriods) selectedSites.filter { it.ownerId == campsite.ownerId } else selectedSites
+    val maximum = capacitySites.takeIf { it.isNotEmpty() && it.all { site -> (site.maxOccupancy ?: 0) > 0 } }
+        ?.sumOf { it.maxOccupancy!! }
+    val winnerCount = if (useMaxCapacity) maximum ?: 0 else winners.toIntOrNull() ?: 0
+    val capacityError = if (useMaxCapacity || winners.isNotBlank() || maximum == null || maximum <= 0)
+        lotteryCapacityError(winnerCount, maximum, useMaxCapacity) else null
     val draft = Lottery(
         id = existingLottery?.id ?: "draft", ownerId = campsite.ownerId,
         campsiteId = existingLottery?.campsiteId?.takeIf { it in selectedIds } ?: selectedIds.firstOrNull().orEmpty(),
         campsiteIds = selectedIds.toList(),
+        campsiteOwners = existingLottery?.campsiteOwners.orEmpty(),
+        campsiteInvitations = existingLottery?.campsiteInvitations.orEmpty(),
         waitingListCapacity = if (limitWaitlist) waitlistLimit.toIntOrNull()?.takeIf { it > 0 } ?: -1 else 0,
         numberOfWinners = winnerCount, useMaxCapacity = useMaxCapacity,
         registrationStartDate = registrationStart, registrationEndDate = registrationEnd,
@@ -100,8 +109,10 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
         stayStartDate = stayStart, stayEndDate = stayEnd
     )
     val validationError = runCatching { validateLottery(draft) }.exceptionOrNull()?.message
-    val availabilityError = if (stayStart.isNotBlank() && stayEnd.isNotBlank())
-        lotteryListingError(draft, selectedSites) else null
+    val mutation = runCatching { if (existingLottery == null) draft else updatedLotteryListing(existingLottery, draft) }
+    val effectiveDraft = mutation.getOrNull()
+    val availabilityError = mutation.exceptionOrNull()?.message ?: if (stayStart.isNotBlank() && stayEnd.isNotBlank() && effectiveDraft != null)
+        lotteryListingError(effectiveDraft, selectedSites.filter { it.id in effectiveDraft.offeredCampsiteIds() }) else null
     val allDatesSelected = listOf(registrationStart, registrationEnd, bookingStart, bookingEnd, stayStart, stayEnd)
         .all { it.isNotBlank() }
     LaunchedEffect(draft) { submission.clearError() }
@@ -171,7 +182,7 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                 selectedIds.forEach { id ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(choices.find { it.id == id }?.name ?: "Unavailable campsite ($id)", Modifier.weight(1f))
-                        TextButton(enabled = !submission.saving && selectedIds.size > 1, onClick = {
+                        TextButton(enabled = !submission.saving && selectedIds.size > 1 && choices.find { it.id == id }?.ownerId == campsite.ownerId, onClick = {
                             selectedIds = ArrayList(selectedIds.filterNot { it == id })
                             duplicateError = ""
                         }) { Text("Remove") }
@@ -182,7 +193,7 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                         Text("Add campsite")
                     }
                     DropdownMenu(expanded = addingCampsite, onDismissRequest = { addingCampsite = false }) {
-                        choices.forEach { site ->
+                        choices.filter { it.ownerId == campsite.ownerId }.forEach { site ->
                             DropdownMenuItem(text = { Text(site.name) }, onClick = {
                                 addingCampsite = false
                                 if (site.id in selectedIds) duplicateError = "Duplicate campsites are not allowed."
@@ -198,7 +209,11 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                 if (submission.loadingCampsites) CircularProgressIndicator(Modifier.size(20.dp))
                 if (duplicateError.isNotEmpty()) Text(duplicateError, color = PinedrawColors.Coral)
                 if (!submission.loadingCampsites && submission.campsites.isEmpty()) {
-                    TextButton(onClick = { submission.loadCampsites() }) { Text("Reload campsites") }
+                    TextButton(onClick = { submission.loadCampsites(existingLottery) }) { Text("Reload campsites") }
+                }
+                Text("Invite other owners from Lottery collaboration on your campsite details after saving.", color = PinedrawColors.TextSecondary)
+                if (existingLottery != null && existingLottery.participatingOwnerIds().size > 1 && lotteryTermsChanged(existingLottery, draft)) {
+                    Text("Changing shared dates removes other owners' campsites until they accept again. Set capacity using your own campsites during reapproval.", color = PinedrawColors.Coral)
                 }
             }
 
@@ -285,8 +300,8 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                             style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
                     }
                 }
-                LotteryDateField("First offered night", stayStart, !submission.saving, campsites = selectedSites) { stayStart = it }
-                LotteryDateField("Stay end (checkout)", stayEnd, !submission.saving, checkout = true, campsites = selectedSites) { stayEnd = it }
+                LotteryDateField("First offered night", stayStart, !submission.saving, campsites = selectedSites.filter { it.ownerId == campsite.ownerId }) { stayStart = it }
+                LotteryDateField("Stay end (checkout)", stayEnd, !submission.saving, checkout = true, campsites = selectedSites.filter { it.ownerId == campsite.ownerId }) { stayEnd = it }
                 if (availabilityError != null) {
                     Text(availabilityError, color = PinedrawColors.Coral, style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
@@ -318,9 +333,11 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                 Text(if (submission.saving) "Saving..." else if (existingLottery == null) "Start Lottery" else "Update", fontWeight = FontWeight.Bold)
             }
             if (existingLottery != null) OutlinedButton(
-                onClick = { confirmation = "delete" }, enabled = !submission.saving,
+                onClick = { confirmation = "delete" }, enabled = !submission.saving && existingLottery.participatingOwnerIds().size == 1,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) { Text("Delete", color = PinedrawColors.Coral) }
+            if (existingLottery != null && existingLottery.participatingOwnerIds().size > 1)
+                Text("Other owners must withdraw their campsites before you can delete this lottery.", color = PinedrawColors.TextSecondary)
         }
     }
 }

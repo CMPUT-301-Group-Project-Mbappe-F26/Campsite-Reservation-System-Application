@@ -17,7 +17,9 @@ GitHub scheduling is best effort and can be delayed; this is not an exact-midnig
 For each eligible lottery, the script:
 
 1. Reads the latest lottery in a Firestore transaction.
-2. Checks that its referenced campsite exists and has the same owner.
+2. Checks that every offered campsite exists and matches its accepted `campsiteOwners`
+   grant (or the coordinator `ownerId` for legacy documents). Pending invitations are
+   excluded. See [shared owner lotteries](shared-lotteries.md).
 3. Draws up to `numberOfWinners` distinct IDs from `registered`.
 4. Updates only `pending` and `drawCompleted` in the same transaction.
 
