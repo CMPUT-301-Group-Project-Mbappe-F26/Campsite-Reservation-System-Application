@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.model.offeredCampsiteIds
 import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.LotteryService
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -44,11 +45,13 @@ class LotteryCreationViewModel : ViewModel() {
         private set
 
     /** Loads the owner's selectable listings without making the view access Firebase. */
-    fun loadCampsites() {
+    fun loadCampsites(existingLottery: Lottery? = null) {
         viewModelScope.launch {
             loadingCampsites = true
             try {
                 campsites = CampsiteService().getMyCampsites()
+                val missing = existingLottery?.offeredCampsiteIds().orEmpty().filterNot { id -> campsites.any { it.id == id } }
+                campsites = campsites + missing.mapNotNull { CampsiteService().getCampsite(it) }
             } catch (exception: Exception) {
                 coroutineContext.ensureActive()
                 error = "Could not load your campsites. Try again."

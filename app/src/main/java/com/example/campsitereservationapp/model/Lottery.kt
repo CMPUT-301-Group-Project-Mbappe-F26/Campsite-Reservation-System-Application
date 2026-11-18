@@ -17,7 +17,7 @@ package com.example.campsitereservationapp.model
  *
  * @constructor Creates a lottery value without performing validation or saving it.
  * @property id Firestore document ID, generated once for a creation attempt and its retries.
- * @property ownerId Firebase Authentication UID of the campsite owner.
+ * @property ownerId Firebase Authentication UID of the lottery coordinator and primary campsite owner.
  * @property campsiteId Primary campsite document ID retained for existing app integrations.
  * @property numberOfWinners Positive number of reservation opportunities (the form's capacity).
  * Must be strictly below the combined current occupancy unless [useMaxCapacity] is true.
@@ -41,6 +41,11 @@ package com.example.campsitereservationapp.model
  * @property drawCompleted Whether the service has already saved the initial draw, including an empty draw.
  * @property listingRevision Owner update counter used to reject stale form submissions.
  * @property closedCampsiteId Campsite whose removal closed this listing, or empty while unaffected.
+ * @property campsiteOwners Accepted campsite-to-owner grants. Missing legacy entries belong to [ownerId].
+ * @property campsiteInvitations Pending campsite-to-owner invitations; these campsites are not offered to entrants.
+ * @property collaborationAction Last membership operation, used by security rules to constrain writes.
+ * @property collaborationCampsiteId Campsite targeted by that membership operation.
+ * @property rejectedReservationId Reservation authorizing an owning contributor's last rejection.
  * @see com.example.campsitereservationapp.service.LotteryService
  */
 data class Lottery(
@@ -64,7 +69,12 @@ data class Lottery(
     val cancelledEntrantIds: List<String> = emptyList(),
     val campsiteIds: List<String> = emptyList(),
     val listingRevision: Long = 0,
-    val closedCampsiteId: String = ""
+    val closedCampsiteId: String = "",
+    val campsiteOwners: Map<String, String> = emptyMap(),
+    val campsiteInvitations: Map<String, String> = emptyMap(),
+    val collaborationAction: String = "",
+    val collaborationCampsiteId: String = "",
+    val rejectedReservationId: String = ""
 ) {
     /**
      * Randomly selects distinct user IDs from [registered], without changing this lottery.
@@ -97,3 +107,13 @@ const val MAX_LOTTERY_CAMPSITES = 8
 
 /** Resolves new multi-campsite listings and existing single-campsite documents uniformly. */
 fun Lottery.offeredCampsiteIds(): List<String> = campsiteIds.ifEmpty { listOf(campsiteId) }
+
+/** Resolves the accepting owner, retaining existing single-owner documents without migration. */
+fun Lottery.campsiteOwnerId(id: String): String = campsiteOwners[id] ?: ownerId
+
+/** True only for an offered campsite whose current owner matches its accepted ownership grant. */
+fun Lottery.includesAcceptedCampsite(campsite: Campsite): Boolean =
+    campsite.id in offeredCampsiteIds() && campsite.ownerId == campsiteOwnerId(campsite.id)
+
+/** The coordinator and every owner who has accepted a campsite into this lottery. */
+fun Lottery.participatingOwnerIds(): Set<String> = offeredCampsiteIds().map(::campsiteOwnerId).toSet() + ownerId

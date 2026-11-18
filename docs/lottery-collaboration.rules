@@ -1,0 +1,235 @@
+// MERGE FRAGMENT, not a standalone ruleset. See shared-lotteries.md.
+// Place these uniquely named helpers inside the existing /databases/{database}/documents scope.
+// Replace its existing /lotteries and /lotteryNotices matches with the matches below.
+function lcIds(data) { return data.get('campsiteIds', []).size() == 0 ? [data.campsiteId] : data.campsiteIds; }
+function lcOwner(data, id) { return data.get('campsiteOwners', {}).get(id, data.ownerId); }
+function lcEditable(data) { return !data.get('drawCompleted', false) && data.get('pending', []) == [] && data.get('booked', []) == []; }
+function lcSite(id) { return get(/databases/$(database)/documents/campsites/$(id)).data; }
+function lcOwnerAt(data, i) {
+  let ids = lcIds(data);
+  return ids.size() <= i || lcSite(ids[i]).ownerId == lcOwner(data, ids[i]);
+}
+function lcCapacityAt(ids, i) { return ids.size() <= i ? 0 : lcSite(ids[i]).maxOccupancy; }
+function lcMaximum(data) {
+  let ids = lcIds(data);
+  return lcCapacityAt(ids,0)+lcCapacityAt(ids,1)+lcCapacityAt(ids,2)+lcCapacityAt(ids,3)
+    +lcCapacityAt(ids,4)+lcCapacityAt(ids,5)+lcCapacityAt(ids,6)+lcCapacityAt(ids,7);
+}
+function lcLimits(data, maximum) {
+  let ids = lcIds(data);
+  let invites = data.get('campsiteInvitations', {});
+  let limit = data.get('waitingListCapacity', 1000);
+  return ids is list && ids.size() >= 1 && ids.size() <= 8 && ids.toSet().size() == ids.size()
+    && data.campsiteId in ids && lcOwner(data, data.campsiteId) == data.ownerId
+    && data.get('campsiteOwners', {}).keys().hasOnly(ids)
+    && invites.keys().toSet().intersection(ids.toSet()).size() == 0 && ids.size()+invites.size() <= 8
+    && data.numberOfWinners is int && data.numberOfWinners > 0
+    && (data.get('useMaxCapacity',false) ? data.numberOfWinners == maximum : data.numberOfWinners < maximum)
+    && limit is int && (limit == 0 || limit > data.numberOfWinners) && validPeriods(data);
+}
+function lcListing(data) {
+  return lcLimits(data,lcMaximum(data))
+    && lcOwnerAt(data,0)&&lcOwnerAt(data,1)&&lcOwnerAt(data,2)&&lcOwnerAt(data,3)
+    && lcOwnerAt(data,4)&&lcOwnerAt(data,5)&&lcOwnerAt(data,6)&&lcOwnerAt(data,7);
+}
+function lcOwnAt(data, i) { return lcIds(data).size() <= i || lcOwner(data,lcIds(data)[i]) == data.ownerId; }
+function lcSingleOwner(data) {
+  return lcOwnAt(data,0)&&lcOwnAt(data,1)&&lcOwnAt(data,2)&&lcOwnAt(data,3)
+    &&lcOwnAt(data,4)&&lcOwnAt(data,5)&&lcOwnAt(data,6)&&lcOwnAt(data,7);
+}
+function lcTerms(data) {
+  return [data.registrationStartDate,data.registrationEndDate,data.bookingStartDate,data.bookingEndDate,
+    data.stayStartDate,data.stayEndDate];
+}
+function lcFreshNotice(id, revision, kind) {
+  let key = kind == 'deleted' ? id+'_deleted' : id+'_'+string(revision);
+  let notice = getAfter(/databases/$(database)/documents/lotteryNotices/$(key)).data;
+  return notice.kind == kind && notice.createdAt == request.time;
+}
+function lcExistingAllowed(before, after, id, changed, nextIds) {
+  let owner = lcOwner(before,id);
+  return owner == before.ownerId ? (!(id in nextIds) || lcOwner(after,id)==owner) : (changed
+    ? !(id in nextIds) && after.get('campsiteInvitations',{}).get(id,'') == owner
+    : id in nextIds && lcOwner(after,id) == owner);
+}
+function lcAddedAllowed(before, after, id, oldIds) {
+  return id in oldIds || (lcOwner(after,id) == before.ownerId && lcSite(id).ownerId == before.ownerId);
+}
+function lcCoordinatorMembership(before, after) {
+  let old = lcIds(before);
+  let next = lcIds(after);
+  let changed = lcTerms(before)!=lcTerms(after);
+  return (!changed && old==next && before.get('campsiteOwners',{})==after.get('campsiteOwners',{}))
+    || (lcExistingAllowed(before,after,old[0],changed,next)
+    &&(old.size()<2||lcExistingAllowed(before,after,old[1],changed,next))
+    &&(old.size()<3||lcExistingAllowed(before,after,old[2],changed,next))
+    &&(old.size()<4||lcExistingAllowed(before,after,old[3],changed,next))
+    &&(old.size()<5||lcExistingAllowed(before,after,old[4],changed,next))
+    &&(old.size()<6||lcExistingAllowed(before,after,old[5],changed,next))
+    &&(old.size()<7||lcExistingAllowed(before,after,old[6],changed,next))
+    &&(old.size()<8||lcExistingAllowed(before,after,old[7],changed,next))
+    &&lcAddedAllowed(before,after,next[0],old)
+    &&(next.size()<2||lcAddedAllowed(before,after,next[1],old))
+    &&(next.size()<3||lcAddedAllowed(before,after,next[2],old))
+    &&(next.size()<4||lcAddedAllowed(before,after,next[3],old))
+    &&(next.size()<5||lcAddedAllowed(before,after,next[4],old))
+    &&(next.size()<6||lcAddedAllowed(before,after,next[5],old))
+    &&(next.size()<7||lcAddedAllowed(before,after,next[6],old))
+    &&(next.size()<8||lcAddedAllowed(before,after,next[7],old)));
+}
+function lcCoordinatorUpdate(id) {
+  let before = resource.data;
+  let after = request.resource.data;
+  return before.ownerId == request.auth.uid && lcEditable(before)
+    && after.diff(before).affectedKeys().hasOnly(['campsiteId','campsiteIds','campsiteOwners','campsiteInvitations',
+      'numberOfWinners','useMaxCapacity','waitingListCapacity','registrationStartDate','registrationEndDate',
+      'bookingStartDate','bookingEndDate','stayStartDate','stayEndDate','listingRevision'])
+    && after.listingRevision == before.get('listingRevision',0)+1
+    && lcCoordinatorMembership(before,after)
+    && lcLimits(after,lcMaximum(after))
+    && (after.get('waitingListCapacity',1000)==0 || after.waitingListCapacity >= before.get('registered',[]).toSet().size())
+    && lcFreshNotice(id,after.listingRevision,'updated');
+}
+function lcRemovedInvite(before, after, target) {
+  let old = before.get('campsiteInvitations',{});
+  let next = after.get('campsiteInvitations',{});
+  return target in old && !(target in next) && next.diff(old).affectedKeys().hasOnly([target]);
+}
+function lcInvite(before, after, target) {
+  let old = before.get('campsiteInvitations',{});
+  let next = after.get('campsiteInvitations',{});
+  return request.auth.uid == before.ownerId && target != '' && !(target in lcIds(before)) && !(target in old)
+    && lcSite(target).published && lcSite(target).ownerId != request.auth.uid
+    && lcSite(target).maxOccupancy > 0 && next[target] == lcSite(target).ownerId
+    && next.diff(old).affectedKeys().hasOnly([target]) && lcIds(before).size()+next.size() <= 8
+    && after.diff(before).affectedKeys().hasOnly(['campsiteInvitations','listingRevision','collaborationAction','collaborationCampsiteId']);
+}
+function lcAccept(before, after, target) {
+  let oldOwners = before.get('campsiteOwners',{});
+  let nextOwners = after.get('campsiteOwners',{});
+  return before.get('campsiteInvitations',{}).get(target,'') == request.auth.uid
+    && lcSite(target).ownerId == request.auth.uid && lcSite(target).published
+    && !(request.auth.uid in before.get('registered',[])) && !(target in lcIds(before))
+    && after.campsiteIds == lcIds(before).concat([target]) && lcRemovedInvite(before,after,target)
+    && nextOwners[target] == request.auth.uid && nextOwners.diff(oldOwners).affectedKeys().hasOnly([target])
+    && after.useMaxCapacity == false && lcLimits(after,lcMaximum(after))
+    && after.diff(before).affectedKeys().hasOnly(['campsiteIds','campsiteOwners','campsiteInvitations','useMaxCapacity',
+      'listingRevision','collaborationAction','collaborationCampsiteId']);
+}
+function lcWithdraw(before, after, target) {
+  let oldOwners = before.get('campsiteOwners',{});
+  let nextOwners = after.get('campsiteOwners',{});
+  let maximum = lcMaximum(after);
+  let winners = before.numberOfWinners < maximum ? before.numberOfWinners : maximum;
+  return target in lcIds(before) && target != before.campsiteId && lcOwner(before,target) == request.auth.uid
+    && lcSite(target).ownerId == request.auth.uid && after.campsiteIds == lcIds(before).removeAll([target])
+    && !(target in nextOwners) && nextOwners.diff(oldOwners).affectedKeys().hasOnly([target])
+    && after.numberOfWinners == winners && after.useMaxCapacity == (winners == maximum) && lcLimits(after,maximum)
+    && after.diff(before).affectedKeys().hasOnly(['campsiteIds','campsiteOwners','numberOfWinners','useMaxCapacity',
+      'listingRevision','collaborationAction','collaborationCampsiteId']);
+}
+function lcMembership(id) {
+  let before = resource.data;
+  let after = request.resource.data;
+  let target = after.get('collaborationCampsiteId','');
+  let action = after.get('collaborationAction','');
+  return lcEditable(before) && after.listingRevision == before.get('listingRevision',0)+1 && (
+    (action=='invite' && lcInvite(before,after,target))
+    || (action=='decline' && lcRemovedInvite(before,after,target)
+      && (request.auth.uid == before.ownerId || before.campsiteInvitations[target] == request.auth.uid)
+      && after.diff(before).affectedKeys().hasOnly(['campsiteInvitations','listingRevision','collaborationAction','collaborationCampsiteId']))
+    || (action=='accept' && lcAccept(before,after,target) && lcFreshNotice(id,after.listingRevision,'updated'))
+    || (action=='withdraw' && lcWithdraw(before,after,target) && lcFreshNotice(id,after.listingRevision,'updated')));
+}
+function lcPartyAt(data, size, i) {
+  let ids = lcIds(data);
+  return ids.size()>i && lcSite(ids[i]).published && lcSite(ids[i]).ownerId == lcOwner(data,ids[i]) && lcSite(ids[i]).maxOccupancy >= size;
+}
+function lcJoin() {
+  let before = resource.data;
+  let after = request.resource.data;
+  let uid = request.auth.uid;
+  let sizes = after.get('registeredGroupSizes',{});
+  let size = sizes.get(uid,0);
+  let limit = before.get('waitingListCapacity',1000);
+  return lcEditable(before) && before.registrationStartDate <= albertaToday() && albertaToday() <= before.registrationEndDate
+    && uid != before.ownerId && !(uid in before.get('campsiteOwners',{}).values()) && !(uid in before.get('registered',[]))
+    && after.diff(before).affectedKeys().hasOnly(['registered','registeredGroupSizes'])
+    && after.registered == before.get('registered',[]).concat([uid])
+    && sizes.diff(before.get('registeredGroupSizes',{})).affectedKeys().hasOnly([uid]) && size is int && size>0
+    && (limit==0 || after.registered.toSet().size()<=limit)
+    && (lcPartyAt(before,size,0)||lcPartyAt(before,size,1)||lcPartyAt(before,size,2)||lcPartyAt(before,size,3)
+      ||lcPartyAt(before,size,4)||lcPartyAt(before,size,5)||lcPartyAt(before,size,6)||lcPartyAt(before,size,7));
+}
+function lcLeave() {
+  let before = resource.data;
+  let after = request.resource.data;
+  let uid = request.auth.uid;
+  return !before.get('drawCompleted',false) && before.registrationStartDate <= albertaToday() && albertaToday() <= before.registrationEndDate
+    && uid in before.get('registered',[]) && after.registered == before.registered.removeAll([uid])
+    && after.diff(before).affectedKeys().hasOnly(['registered','registeredGroupSizes'])
+    && after.get('registeredGroupSizes',{}).diff(before.get('registeredGroupSizes',{})).affectedKeys().hasOnly([uid])
+    && !(uid in after.get('registeredGroupSizes',{}));
+}
+function lcRejectBooking(id) {
+  let before = resource.data;
+  let after = request.resource.data;
+  let booking = getAfter(/databases/$(database)/documents/reservations/$(after.rejectedReservationId)).data;
+  return after.diff(before).affectedKeys().hasOnly(['cancelledEntrantIds','rejectedReservationId'])
+    && booking.lotteryId == id && booking.status == 'Rejected' && ownsCampsite(booking.campsiteId) && isVerifiedBooking(booking)
+    && !(booking.entrantId in before.get('cancelledEntrantIds',[]))
+    && after.cancelledEntrantIds == before.get('cancelledEntrantIds',[]).concat([booking.entrantId]);
+}
+function lcCloseRemoved() {
+  let before = resource.data;
+  let after = request.resource.data;
+  let removed = after.get('closedCampsiteId','');
+  return before.ownerId == request.auth.uid && lcSingleOwner(before) && removed in lcIds(before)
+    && ownsCampsite(removed) && !existsAfter(/databases/$(database)/documents/campsites/$(removed))
+    && after.diff(before).affectedKeys().hasOnly(['registered','registeredGroupSizes','pending','drawCompleted','closedCampsiteId','campsiteInvitations'])
+    && after.registered==[] && after.registeredGroupSizes=={} && after.pending==[] && after.drawCompleted==true
+    && after.get('campsiteInvitations',{})=={};
+}
+match /lotteries/{lotteryId} {
+  allow read: if request.auth != null;
+  allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid && request.resource.data.id == lotteryId
+    && request.resource.data.get('campsiteOwners',{}).values().toSet().hasOnly([request.auth.uid])
+    && lcListing(request.resource.data) && lcEditable(request.resource.data)
+    && request.resource.data.get('campsiteInvitations',{}) == {} && request.resource.data.get('registered',[]) == []
+    && request.resource.data.get('registeredGroupSizes',{}) == {} && request.resource.data.get('cancelledEntrantIds',[]) == []
+    && request.resource.data.get('listingRevision',0)==0;
+  allow update: if request.auth != null && (lcCoordinatorUpdate(lotteryId)||lcMembership(lotteryId)||lcJoin()||lcLeave());
+  allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid && lcEditable(resource.data)
+    && lcSingleOwner(resource.data) && lcFreshNotice(lotteryId,0,'deleted');
+  allow update: if request.auth != null && request.auth.uid in resource.data.pending
+    && !(request.auth.uid in request.resource.data.pending)
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pending','booked']);
+  allow update: if request.auth != null && lcCloseRemoved();
+  allow update: if isAdmin();
+  allow update: if deletingOwnProfile() && removesOwnLotteryEntries(request.auth.uid);
+  allow update: if request.auth != null && !(request.auth.uid in resource.data.get('cancelledEntrantIds',[]))
+    && request.resource.data.get('cancelledEntrantIds',[]) == resource.data.get('cancelledEntrantIds',[]).concat([request.auth.uid])
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cancelledEntrantIds']);
+  allow update: if request.auth != null && lcRejectBooking(lotteryId);
+}
+function lcNotice(id) {
+  let data = request.resource.data;
+  let before = get(/databases/$(database)/documents/lotteries/$(data.lotteryId)).data;
+  let existsNext = existsAfter(/databases/$(database)/documents/lotteries/$(data.lotteryId));
+  let after = existsNext ? getAfter(/databases/$(database)/documents/lotteries/$(data.lotteryId)).data : {};
+  let target = after.get('collaborationCampsiteId','');
+  let actor = request.auth.uid;
+  return data.keys().hasOnly(['lotteryId','ownerId','recipientIds','kind','title','message','createdAt'])
+    && data.ownerId == actor && lcEditable(before) && data.createdAt == request.time && data.title is string && data.message is string
+    && data.recipientIds is list && data.recipientIds.toSet() == before.get('registered',[]).toSet()
+    && data.recipientIds.size() == data.recipientIds.toSet().size()
+    && ((data.kind=='deleted' && !existsNext && before.ownerId==actor && id==data.lotteryId+'_deleted')
+      || (data.kind=='updated' && existsNext && after.listingRevision == before.get('listingRevision',0)+1
+        && id==data.lotteryId+'_'+string(after.listingRevision)
+        && (before.ownerId==actor || (after.get('collaborationAction','')=='accept' && before.get('campsiteInvitations',{}).get(target,'')==actor)
+          || (after.get('collaborationAction','')=='withdraw' && target in lcIds(before) && lcOwner(before,target)==actor))));
+}
+match /lotteryNotices/{noticeId} {
+  allow read: if request.auth != null && (request.auth.uid in resource.data.recipientIds || isAdmin());
+  allow create: if request.auth != null && lcNotice(noticeId);
+}

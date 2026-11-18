@@ -48,7 +48,7 @@ dokka {
     dokkaSourceSets.configureEach {
         // Include internal validators and private UI helpers in the developer reference.
         perPackageOption {
-            matchingRegex.set("com\\.example\\.campsitereservationapp\\.(campsite|service)")
+            matchingRegex.set("com\\.example\\.campsitereservationapp\\.(campsite|reservation|service)")
             documentedVisibilities.set(setOf(
                 VisibilityModifier.Public,
                 VisibilityModifier.Protected,

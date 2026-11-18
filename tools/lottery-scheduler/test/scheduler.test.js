@@ -122,6 +122,27 @@ test("multi-campsite drawing checks every owner and preserves the shared offerin
   assert.equal(invalid.writes, 0);
 });
 
+test("accepted contributions can draw across owners; pending invitations are not offerings", async () => {
+  const shared = { ...lottery, campsiteIds: ["camp", "second"], campsiteOwners: { second: "partner" },
+    campsiteInvitations: { notAccepted: "third" } };
+  const db = store({ "lotteries/draw": shared, "campsites/camp": { ownerId: "owner" },
+    "campsites/second": { ownerId: "partner" } });
+  assert.equal((await drawLotteryDocument(db, { path: "lotteries/draw" }, { now, dryRun: false })).status, "drawn");
+  assert.deepEqual(db.records.get("lotteries/draw").campsiteInvitations, shared.campsiteInvitations);
+});
+
+test("a transferred contribution or an owner grant for an unlisted campsite cannot draw", async () => {
+  for (const changes of [ { campsiteOwners: { camp: "partner" } },
+    { campsiteOwners: { unlisted: "partner" } }, { campsiteOwners: ["owner"] } ]) {
+    const db = store({ "lotteries/draw": { ...lottery, ...changes }, "campsites/camp": { ownerId: "owner" } });
+    await assert.rejects(drawLotteryDocument(db, { path: "lotteries/draw" }, { now, dryRun: false }), DrawDataError);
+    assert.equal(db.writes, 0);
+  }
+  const db = store({ "lotteries/draw": { ...lottery, campsiteIds: ["camp", "second"], campsiteOwners: { second: "partner" } },
+    "campsites/camp": { ownerId: "owner" }, "campsites/second": { ownerId: "new-owner" } });
+  await assert.rejects(drawLotteryDocument(db, { path: "lotteries/draw" }, { now, dryRun: false }), DrawDataError);
+});
+
 test("duplicate campsite offerings cannot be drawn", async () => {
   const db = store({ "lotteries/draw": { ...lottery, campsiteIds: ["camp", "camp"] },
     "campsites/camp": { ownerId: "owner" } });
