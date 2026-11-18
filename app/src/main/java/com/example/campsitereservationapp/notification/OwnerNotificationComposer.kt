@@ -44,6 +44,7 @@ internal fun OwnerNotificationComposer(
     var confirming by rememberSaveable(campsiteId, lottery.id) { mutableStateOf(false) }
     var sending by remember(campsiteId, lottery.id) { mutableStateOf(false) }
     var error by remember(campsiteId, lottery.id) { mutableStateOf("") }
+    var showingHistory by rememberSaveable(campsiteId) { mutableStateOf(false) }
 
     fun closeForm() {
         editing = false
@@ -53,13 +54,33 @@ internal fun OwnerNotificationComposer(
         error = ""
     }
 
+    if (showingHistory) {
+        SentNotificationHistory(
+            campsiteId = campsiteId,
+            onBack = { showingHistory = false },
+            onNewNotification = {
+                showingHistory = false
+                editing = true
+            }
+        )
+        return
+    }
+
     if (!editing) {
-        OutlinedButton(
-            onClick = { editing = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = CircleShape
-        ) {
-            Text("Notify entrants", fontWeight = FontWeight.SemiBold)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { editing = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = CircleShape
+            ) {
+                Text("Notify entrants", fontWeight = FontWeight.SemiBold)
+            }
+            TextButton(
+                onClick = { showingHistory = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Sent notifications")
+            }
         }
         return
     }
