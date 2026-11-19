@@ -38,7 +38,7 @@ fun reservationCampsiteError(lottery: Lottery, campsite: Campsite?, entrantId: S
     entrantId !in lottery.pending -> "You do not have a spot to reserve in this lottery."
     campsite == null -> "This campsite is no longer available."
     campsite.id !in lottery.offeredCampsiteIds() -> "Choose a campsite listed in this lottery."
-    campsite.ownerId != lottery.ownerId || !campsite.published -> "This campsite is no longer available."
+    !lottery.includesAcceptedCampsite(campsite) || !campsite.published -> "This campsite is no longer available."
     (campsite.maxOccupancy ?: 0) < (lottery.registeredGroupSizes[entrantId] ?: 1) ->
         "This campsite cannot accommodate your party."
     else -> null

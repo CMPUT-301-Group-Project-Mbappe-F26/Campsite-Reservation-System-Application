@@ -293,7 +293,10 @@ class ReservationService {
             if (error != null) return@runTransaction error
             transaction.update(reservationDoc, "status", RESERVATION_REJECTED)
             if (lotteryDoc != null && lottery != null && reservation.entrantId !in lottery.cancelledEntrantIds) {
-                transaction.update(lotteryDoc, "cancelledEntrantIds", lottery.cancelledEntrantIds + reservation.entrantId)
+                transaction.update(lotteryDoc, mapOf(
+                    "cancelledEntrantIds" to lottery.cancelledEntrantIds + reservation.entrantId,
+                    "rejectedReservationId" to reservationId
+                ))
             }
             null
         }.await()

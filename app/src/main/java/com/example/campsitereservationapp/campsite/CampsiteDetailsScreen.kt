@@ -109,8 +109,9 @@ fun CampsiteDetailsScreen(
                 campsite = result
                 if (result.isOwnedBy(ownerId)) {
                     ownerLotteries = lotteryService.getLotteriesForCampsite(campsiteId)
-                        .filter { !it.drawCompleted && it.pending.isEmpty() && it.booked.isEmpty() }
+                        .filter { it.ownerId == ownerId && !it.drawCompleted && it.pending.isEmpty() && it.booked.isEmpty() }
                     currentOwnerLottery = lotteryService.getCurrentLottery(campsiteId)
+                        ?.takeIf { it.ownerId == ownerId }
                 }
                 if (entrantId != null && result.ownerId != entrantId) {
                     lottery = withTimeoutOrNull(20000) {
@@ -304,6 +305,8 @@ fun CampsiteDetailsScreen(
                                 lottery = currentOwnerLottery!!
                             )
                         }
+                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null))
+                            LotteryCollaborationSection(site, refresh, onChanged = { refresh++ })
                         // Only the owner sees who has booked the campsite (US 02.07.01 to US 02.07.03)
                         if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) CampsiteReservationsSection(site.id)
 

@@ -22,9 +22,15 @@ export async function drawLotteryDocument(db, reference, { now, dryRun = true })
         new Set(ids).size !== ids.length || !ids.includes(lottery.campsiteId)) {
       throw new DrawDataError("Lottery must reference distinct valid campsites.");
     }
+    const owners = lottery.campsiteOwners ?? {};
+    if (typeof owners !== "object" || Array.isArray(owners) ||
+        Object.entries(owners).some(([id, owner]) => !ids.includes(id) || typeof owner !== "string" || !owner.trim()) ||
+        (owners[lottery.campsiteId] ?? lottery.ownerId) !== lottery.ownerId) {
+      throw new DrawDataError("Accepted campsite owners must match the lottery offerings.");
+    }
     for (const id of ids) {
       const campsite = await transaction.get(db.collection("campsites").doc(id));
-      if (!campsite.exists || campsite.data().ownerId !== lottery.ownerId) {
+      if (!campsite.exists || campsite.data().ownerId !== (owners[id] ?? lottery.ownerId)) {
         throw new DrawDataError("Campsite is missing or its owner does not match the lottery.");
       }
     }

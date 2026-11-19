@@ -1,0 +1,13 @@
+{
+  "name": "lottery-collaboration-security-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node prepare-rules.js && firebase emulators:exec --config firebase.json --project demo-shared-lottery --only firestore \"node --test shared.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.3.0",
+    "firebase-tools": "15.36.0"
+  }
+}

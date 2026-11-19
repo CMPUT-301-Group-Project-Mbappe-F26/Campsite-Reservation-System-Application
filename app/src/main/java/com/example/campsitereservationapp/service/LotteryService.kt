@@ -4,6 +4,9 @@ import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.offeredCampsiteIds
 import com.example.campsitereservationapp.model.MAX_LOTTERY_CAMPSITES
+import com.example.campsitereservationapp.model.campsiteOwnerId
+import com.example.campsitereservationapp.model.includesAcceptedCampsite
+import com.example.campsitereservationapp.model.participatingOwnerIds
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -70,6 +73,9 @@ class LotteryService {
                     ?.copy(id = id) ?: error("This campsite is no longer available.")
             }
             check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+            check(campsites.all { it.ownerId == uid } && lottery.campsiteInvitations.isEmpty()) {
+                "Create the lottery with your own campsites, then invite other owners."
+            }
             val listingError = lotteryListingError(lottery, campsites)
             require(listingError == null) { listingError.orEmpty() }
             if (existing.exists()) {
@@ -100,7 +106,9 @@ class LotteryService {
                 transaction.get(db.collection("campsites").document(id)).toObject(Campsite::class.java)
                     ?.copy(id = id) ?: error("A campsite is no longer available.")
             }
-            check(sites.values.all { it.ownerId == uid }) { "You can only manage your own campsites." }
+            val changedIds = (current.offeredCampsiteIds() - draft.offeredCampsiteIds().toSet()) +
+                (draft.offeredCampsiteIds() - current.offeredCampsiteIds().toSet())
+            check(changedIds.all { sites.getValue(it).ownerId == uid }) { "You can only manage your own campsites." }
             val updated = updatedLotteryListing(current, draft)
             val error = lotteryListingError(updated, updated.offeredCampsiteIds().map { sites.getValue(it) })
             require(error == null) { error.orEmpty() }
@@ -111,7 +119,8 @@ class LotteryService {
                 "registrationStartDate" to updated.registrationStartDate, "registrationEndDate" to updated.registrationEndDate,
                 "bookingStartDate" to updated.bookingStartDate, "bookingEndDate" to updated.bookingEndDate,
                 "stayStartDate" to updated.stayStartDate, "stayEndDate" to updated.stayEndDate,
-                "listingRevision" to updated.listingRevision
+                "listingRevision" to updated.listingRevision,
+                "campsiteOwners" to updated.campsiteOwners, "campsiteInvitations" to updated.campsiteInvitations
             ))
             transaction.set(notice, mapOf(
                 "lotteryId" to original.id, "ownerId" to uid, "recipientIds" to current.participantIds(),
@@ -135,6 +144,7 @@ class LotteryService {
             val current = transaction.get(document).toObject(Lottery::class.java)?.copy(id = original.id)
                 ?: error("This lottery is no longer available.")
             check(current.ownerId == uid && auth.currentUser?.uid == uid) { "You can only delete your own lottery." }
+            check(current.participatingOwnerIds().size == 1) { "Other owners must withdraw their campsites before this shared lottery can be deleted." }
             check(current.listingRevision == original.listingRevision) { "This lottery changed. Reopen the form before deleting." }
             val siteNames = current.offeredCampsiteIds().map { id ->
                 val site = transaction.get(db.collection("campsites").document(id)).toObject(Campsite::class.java)
@@ -220,7 +230,7 @@ class LotteryService {
                 transaction.get(db.collection("campsites").document(id)).toObject(Campsite::class.java)
                     ?.copy(id = id) ?: error("This campsite is no longer available.")
             }
-            val campsite = sites.filter { it.published && it.ownerId == lottery.ownerId }.maxByOrNull { it.maxOccupancy ?: 0 }
+            val campsite = sites.filter { it.published && lottery.includesAcceptedCampsite(it) }.maxByOrNull { it.maxOccupancy ?: 0 }
                 ?: error("This campsite is not available to entrants.")
             check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
             val joinError = waitingListJoinError(
@@ -266,8 +276,9 @@ class LotteryService {
     /**
      * Loads a lottery, draws its configured winner count, and saves pending winners atomically.
      *
-     * The caller must be signed in as both the lottery and campsite owner, including
-     * when using an anonymous guest account. Registration remains open through
+     * The caller must be signed in as the lottery coordinator; each campsite must
+     * still match its accepted owner's grant. Anonymous owners are supported, including
+     * when using a guest account. Registration remains open through
      * 23:59 on its end date in `America/Edmonton`; an initial draw is allowed from
      * midnight the following day. This Android implementation uses the device clock.
      *
@@ -299,8 +310,8 @@ class LotteryService {
             }
             for (id in lottery.offeredCampsiteIds()) {
                 val site = transaction.get(db.collection("campsites").document(id))
-                check(site.exists() && site.getString("ownerId") == uid && auth.currentUser?.uid == uid) {
-                    "This campsite does not belong to your account."
+                check(site.exists() && site.getString("ownerId") == lottery.campsiteOwnerId(id) && auth.currentUser?.uid == uid) {
+                    "A listed campsite changed owner."
                 }
             }
             val drawn = prepareLotteryDraw(lottery, System.currentTimeMillis())
@@ -353,7 +364,7 @@ internal fun waitingListJoinError(
         lottery.booked.any { it.entrantId == entrantId }
     return when {
         entrantId.isBlank() -> "Please sign in before joining a lottery."
-        lottery.ownerId == entrantId -> "Campsite owners cannot enter their own lottery."
+        entrantId in lottery.participatingOwnerIds() -> "Campsite owners cannot enter their own lottery."
         groupSize <= 0 -> "Party size must be at least 1."
         maximum == null || maximum <= 0 -> "This campsite does not have a valid maximum occupancy."
         groupSize > maximum -> "Party size cannot exceed this campsite's maximum occupancy of $maximum."
