@@ -1,5 +1,9 @@
 package com.example.campsitereservationapp.home
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +29,15 @@ import com.example.campsitereservationapp.service.CampsiteService
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.example.campsitereservationapp.qr.CampsiteQr
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.launch
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.MaterialTheme
 
 // Shows the welcome screen and profile shortcut.
 /**
@@ -48,11 +61,68 @@ fun HomeScreen(
     onSearchTextChange: (String) -> Unit
 ) {
     val campsiteService = remember { CampsiteService() }  // Service to get campsite data
+    var selectedFilters by remember { mutableStateOf(CampsiteFilters()) } // Stores filters currently selected by the user
+    var showFilters by remember { mutableStateOf(false) } // Controls whether the filter popup is visible
+    // Context is needed to check camera permission
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var scanError by remember { mutableStateOf("") }  // Stores error messages
+    var checkingCampsite by remember { mutableStateOf(false) }
+    // Opens the QR scanner and handles the scanned result
+    val qrScanner = rememberLauncherForActivityResult(
+        ScanContract()
+    ) { result ->
+        val qrText = result.contents
+        if (qrText != null) {
+            // Get the campsite ID from QR code
+            val campsiteId = CampsiteQr.getCampsiteId(qrText)
+            if (campsiteId == null) { scanError = "Invalid campsite QR code."
+            } else {
+                checkingCampsite = true
+                scope.launch {
+                    try {
+                        // Finds campsite in Firebase
+                        val campsite = campsiteService.getCampsite(campsiteId)
+                        if (campsite != null && campsite.published) {
+                            scanError = ""
+                            // Open the campsite details screen
+                            onCampsiteClick(campsiteId)
+                        } else {
+                            scanError = "Campsite not found."
+                        }
+                    } catch (e: Exception) {
+                        scanError = "Could not load campsite."
+                    } finally {
+                        checkingCampsite = false
+                    }
+                }
+            }
+        }
+    }
+
+    // Requests camera permission before opening the scanner
+    val cameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { permissionGranted ->
+        if (permissionGranted) {
+            // Set up the scanner to read QR codes
+            val options = ScanOptions()
+            options.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            options.setPrompt("Scan a campsite QR code")
+            options.setBeepEnabled(false)
+            qrScanner.launch(options)
+        } else {
+            scanError = "Camera permission is required."
+        }
+    }
+
     var campsites by remember { mutableStateOf<List<Campsite>>(emptyList()) }  // Store the campsites returned from Firebase
     var loading by remember { mutableStateOf(true) }  // Track loading and errors
     var error by remember { mutableStateOf("") }
-    // Finds campsites matching based on filter
-    val filteredCampsites = getDisplayedCampsites(campsites, searchText)
+    // First apply the existing search
+    val searchedCampsites = getDisplayedCampsites(campsites, searchText)
+    // Then apply the selected filters
+    val filteredCampsites = applyCampsiteFilters(searchedCampsites, selectedFilters)
     // Loading campsites
     DisposableEffect(campsiteService) {
         // Listening for changes
@@ -72,6 +142,19 @@ fun HomeScreen(
         onDispose {
             listener.remove()
         }
+    }
+    // Show the filter popup when the user presses Filters
+    if (showFilters) {
+        CampsiteFilterDialog(
+            currentFilters = selectedFilters,
+            onApply = { newFilters ->
+                selectedFilters = newFilters
+                showFilters = false
+            },
+            onClose = {
+                showFilters = false
+            }
+        )
     }
     Column(
         modifier = Modifier
@@ -150,7 +233,102 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
-        Spacer(Modifier.height(24.dp))
+        // Space between the search bar and QR button
+        Spacer(modifier = Modifier.height(12.dp))
+        // Space between the search bar and buttons
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Opens the campsite filter selection popup
+        OutlinedButton(
+            onClick = {
+                showFilters = true
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Filter Campsites")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Button to scan a campsite QR code
+        OutlinedButton(
+            onClick = {
+                scanError = ""
+                // Check if camera permission is already allowed
+                val permission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.CAMERA
+                )
+                if (permission == PackageManager.PERMISSION_GRANTED) {
+                    // Open the QR scanner
+                    val options = ScanOptions()
+                    options.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                    options.setPrompt("Scan a campsite QR code")
+                    options.setBeepEnabled(false)
+                    qrScanner.launch(options)
+                } else {
+                    // Ask user for camera permission
+                    cameraPermission.launch(Manifest.permission.CAMERA)
+                }
+            },
+            enabled = !checkingCampsite,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Scan QR Code")
+        }
+        //Loading message while checking campsite
+        if (checkingCampsite) {
+            Text(
+                text = "Checking campsite...",
+                color = PinedrawColors.TextSecondary
+            )
+        }
+        // Error if scanning fails
+        if (scanError.isNotEmpty()) {
+            Text(
+                text = scanError,
+                color = PinedrawColors.Coral
+            )
+        }
+        // Show the filters user has selected
+        if (hasActiveFilters(selectedFilters)) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Active Filters",
+                style = MaterialTheme.typography.titleSmall,
+                color = PinedrawColors.Lime
+            )
+            // Show selected location
+            if (selectedFilters.location.isNotBlank()) {
+                Text(
+                    text = "Location: ${selectedFilters.location}",
+                    color = PinedrawColors.TextSecondary
+                )
+            }
+            // Show selected dates
+            if (selectedFilters.startDate.isNotBlank()) {
+                Text(
+                    text = "Dates: ${selectedFilters.startDate} to ${selectedFilters.endDate}",
+                    color = PinedrawColors.TextSecondary
+                )
+            }
+            // Show selected number of guests
+            if (selectedFilters.guests > 0) {
+                Text(
+                    text = "Guests: ${selectedFilters.guests}",
+                    color = PinedrawColors.TextSecondary
+                )
+            }
+            // Remove all selected filters
+            TextButton(
+                onClick = {
+                    selectedFilters = CampsiteFilters()
+                }
+            ) {
+                Text("Clear All Filters")
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+
         // Display Loading, errors, or the list of campsites
         when {
             loading -> {
