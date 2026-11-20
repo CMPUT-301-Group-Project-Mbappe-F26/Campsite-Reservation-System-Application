@@ -129,4 +129,14 @@ class UserService(
                 .documents.mapNotNull { doc -> doc.toObject(User::class.java)?.copy(id = doc.id) }
         }
     }
+
+    /**
+     * Loads all registered profiles.
+     *
+     * @return The profiles found, in no particular order.
+     */
+    suspend fun getAllUsers(): List<User> {
+        return db.collection("users").get().await()
+            .documents.mapNotNull { doc -> doc.toObject(User::class.java)?.copy(id = doc.id) }
+    }
 }
