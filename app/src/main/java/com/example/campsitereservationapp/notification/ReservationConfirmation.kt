@@ -1,6 +1,7 @@
 package com.example.campsitereservationapp.notification
 
 import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.formatReservationDate
 import java.io.OutputStream
 import java.util.Locale
@@ -20,15 +21,22 @@ internal fun reservationConfirmationMessage(
     append(String.format(Locale.CANADA, " · $%.2f CAD", total))
 }
 
+/** Builds the confirmation delivered after an entrant cancels a reservation. */
+internal fun cancellationConfirmationMessage(reservation: Reservation): String =
+    "${reservation.campsiteName.ifBlank { "Your campsite" }} · " +
+        "${formatReservationDate(reservation.checkInDate)} to ${formatReservationDate(reservation.checkOutDate)} · Cancelled"
+
 /** Creates the CSV shown on the reservation confirmation screen. */
 internal fun reservationCsv(
     campsite: Campsite,
     checkIn: String,
     checkOut: String,
     guests: Int,
-    total: Double
+    total: Double,
+    status: String? = null
 ): String {
-    val values = listOf(
+    val headers = mutableListOf("Campsite name", "Location", "Check-in", "Check-out", "Guests", "Price")
+    val values = mutableListOf(
         campsite.name.ifBlank { "Unnamed campsite" },
         campsite.location,
         checkIn,
@@ -36,7 +44,11 @@ internal fun reservationCsv(
         guests.toString(),
         String.format(Locale.CANADA, "$%.2f CAD", total)
     )
-    return "Campsite name,Location,Check-in,Check-out,Guests,Price\n" +
+    if (status != null) {
+        headers += "Status"
+        values += status
+    }
+    return headers.joinToString(",") + "\n" +
         values.joinToString(",", transform = ::csvValue)
 }
 
