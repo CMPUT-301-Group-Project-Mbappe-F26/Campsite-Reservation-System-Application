@@ -18,7 +18,9 @@ import com.example.campsitereservationapp.model.reservationCampsiteChoice
 import com.example.campsitereservationapp.model.reservationCampsiteError
 import com.example.campsitereservationapp.model.reservationNights
 import com.example.campsitereservationapp.model.isNightOpen
+import com.example.campsitereservationapp.notification.reservationConfirmationMessage
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.async
@@ -180,6 +182,7 @@ class ReservationService {
         val relatedIds = LotteryService().getLotteriesForCampsite(selectedId).map { it.id }.distinct()
         val lotteryDoc = db.collection("lotteries").document(lotteryId)
         val reservationDoc = db.collection("reservations").document()
+        val notificationDoc = db.collection("notifications").document()
         return db.runTransaction { transaction ->
             val lottery = transaction.get(lotteryDoc).toObject(Lottery::class.java)?.copy(id = lotteryId)
                 ?: return@runTransaction "This lottery is no longer available."
@@ -203,7 +206,21 @@ class ReservationService {
                 id = reservationDoc.id, entrantId = uid, campsiteId = selectedId, lotteryId = lotteryId,
                 campsiteName = campsite.name, checkInDate = checkIn, checkOutDate = checkOut
             )
+            val guests = lottery.registeredGroupSizes[uid] ?: 1
+            val total = campsite.pricePerNight * reservationNights(checkIn, checkOut).size
             transaction.set(reservationDoc, reservation)
+            transaction.set(notificationDoc, mapOf(
+                "senderId" to uid,
+                "recipientIds" to listOf(uid),
+                "title" to "Reservation confirmed",
+                "message" to reservationConfirmationMessage(campsite, checkIn, checkOut, guests, total),
+                "campsiteId" to selectedId,
+                "campsiteName" to campsite.name,
+                "lotteryId" to lotteryId,
+                "reservationId" to reservationDoc.id,
+                "kind" to "reservation_confirmed",
+                "createdAt" to FieldValue.serverTimestamp()
+            ))
             transaction.update(lotteryDoc, mapOf(
                 "pending" to lottery.pending - uid,
                 "booked" to lottery.booked + reservation

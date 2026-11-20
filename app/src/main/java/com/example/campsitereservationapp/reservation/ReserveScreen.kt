@@ -1,6 +1,9 @@
 package com.example.campsitereservationapp.reservation
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
@@ -30,6 +34,8 @@ import com.example.campsitereservationapp.model.reservationDateFromUtcMillis
 import com.example.campsitereservationapp.model.reservationDateToUtcMillis
 import com.example.campsitereservationapp.model.reservationNights
 import com.example.campsitereservationapp.model.reservationDateToday
+import com.example.campsitereservationapp.notification.reservationCsv
+import com.example.campsitereservationapp.notification.writeReservationCsv
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -124,7 +130,8 @@ internal fun ColumnScope.ReserveFlow(
     backLabel: String = "Back",
     onDeclined: () -> Unit = onBack,
     today: String = reservationDateToday(),
-    groupSize: Int = 1
+    groupSize: Int = 1,
+    onDownloadCsv: ((String) -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -160,6 +167,7 @@ internal fun ColumnScope.ReserveFlow(
             checkOut = checkOut.orEmpty(),
             groupSize = groupSize,
             total = campsite.pricePerNight * nights.size,
+            onDownloadCsv = onDownloadCsv,
             onDone = onReserved
         )
         return
@@ -248,16 +256,28 @@ internal fun ColumnScope.ReserveFlow(
     }
 }
 
-/** Confirmation shown after the reservation has been saved (US 01.05.01). */
+/** Confirmation shown after the reservation has been saved (US 01.05.01 and US 01.05.02). */
 @Composable
-private fun ColumnScope.ReservationConfirmation(
+internal fun ColumnScope.ReservationConfirmation(
     campsite: Campsite,
     checkIn: String,
     checkOut: String,
     groupSize: Int,
     total: Double,
+    onDownloadCsv: ((String) -> Unit)? = null,
     onDone: () -> Unit
 ) {
+    val context = LocalContext.current
+    val csv = remember(campsite, checkIn, checkOut, groupSize, total) {
+        reservationCsv(campsite, checkIn, checkOut, groupSize, total)
+    }
+    val fileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null && !writeReservationCsv(csv) { context.contentResolver.openOutputStream(uri) }) {
+            Toast.makeText(context, "Could not download CSV", Toast.LENGTH_LONG).show()
+        }
+    }
     BackHandler(onBack = onDone)
     IconButton(onClick = onDone, modifier = Modifier.padding(12.dp)) {
         Icon(Icons.Default.Close, contentDescription = "Close")
@@ -296,6 +316,16 @@ private fun ColumnScope.ReservationConfirmation(
                 ReserveRow("Check-out", formatReservationDate(checkOut))
                 ReserveRow("Total paid", String.format(Locale.CANADA, "$%.2f CAD", total))
             }
+        }
+        OutlinedButton(
+            onClick = {
+                if (onDownloadCsv != null) onDownloadCsv(csv)
+                else fileLauncher.launch("reservation.csv")
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+            shape = MaterialTheme.shapes.large
+        ) {
+            Text("Download CSV", fontWeight = FontWeight.Bold)
         }
         Button(
             onClick = onDone,
