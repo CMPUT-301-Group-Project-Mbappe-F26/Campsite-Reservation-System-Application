@@ -2,6 +2,7 @@ package com.example.campsitereservationapp.campsite
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.example.campsitereservationapp.qr.CampsiteQrDialog
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -49,7 +50,7 @@ import java.util.Locale
 
 /**
  * Loads a campsite and displays its details, with extra options for its owner.
- *
+ * Campsite owners can also generate a QR code to share their campsite.
  * Hides other users' unpublished campsites, except from admins. Create Lottery is shown to the owner and
  * opens [LotteryCreation] for the loaded campsite; closing that form returns here.
  * The owner also sees the current lottery's waiting list ([LotteryEntrantsSection]) and the
@@ -80,6 +81,7 @@ fun CampsiteDetailsScreen(
     val ownerId = rememberCampsiteOwnerId()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var showQrCode by rememberSaveable(campsiteId) { mutableStateOf(false) } // Keeps track of whether the QR code popup is open
     var campsite by remember(campsiteId, ownerId) { mutableStateOf<Campsite?>(null) }
     var lottery by remember(campsiteId, entrantId) { mutableStateOf<Lottery?>(null) }
     var loading by remember(campsiteId, ownerId) { mutableStateOf(true) }
@@ -141,7 +143,19 @@ fun CampsiteDetailsScreen(
             lotteryStatus = "Could not load lottery information"
         }
     }
-
+    // Show the QR code for any published campsite
+    if (showQrCode) {
+        val currentCampsite = campsite
+        if (currentCampsite != null && currentCampsite.published) {
+            CampsiteQrDialog(
+                campsiteId = currentCampsite.id,
+                campsiteName = currentCampsite.name,
+                onClose = {
+                    showQrCode = false
+                }
+            )
+        }
+    }
     val ownedCampsite = campsite?.takeIf { ownerId != null && it.ownerId == ownerId }
     if (editingCampsite && ownedCampsite != null && onDeleted != null && !loading && error.isEmpty()) {
         EditOwnedCampsite(
@@ -203,6 +217,25 @@ fun CampsiteDetailsScreen(
                                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text("Edit campsite", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        // Allow users to view the QR code for a published campsite
+                        if (site.published) {
+                            OutlinedButton(
+                                onClick = {
+                                    showQrCode = true
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = CircleShape
+                            ) {
+                                Text(
+                                    text = if (site.isOwnedBy(ownerId) && !fromDiscover) {
+                                        "Generate QR Code"
+                                    } else {
+                                        "View QR Code"
+                                    },
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
                         if (onMessageGuests != null && site.isOwnedBy(ownerId)) {
