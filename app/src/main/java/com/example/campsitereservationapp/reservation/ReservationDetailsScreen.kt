@@ -1,12 +1,18 @@
 package com.example.campsitereservationapp.reservation
 
 import android.util.Log
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -14,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.campsite.CampsitePhoto
@@ -25,8 +32,11 @@ import com.example.campsitereservationapp.model.RESERVATION_REJECTED
 import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.cancelError
 import com.example.campsitereservationapp.model.formatReservationDate
+import com.example.campsitereservationapp.model.reservationNights
 import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.model.reservationStatusLabel
+import com.example.campsitereservationapp.notification.reservationCsv
+import com.example.campsitereservationapp.notification.writeReservationCsv
 import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
@@ -43,7 +53,6 @@ import kotlinx.coroutines.withTimeoutOrNull
  * shows reservations belonging to the signed-in entrant. [ReservationDetailsContent] only
  * draws them, so intent tests can check the screen without Firebase.
  *
- * Outstanding issues: cancelling sends no notification yet (US 01.07.02).
  */
 
 /**
@@ -142,7 +151,8 @@ fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit, onOpenMe
                 ReservationDetailsContent(
                     booking, campsite, onOpenMessages,
                     onCancel = if (canCancel) ::cancelReservation else null,
-                    cancelling = cancelling, cancelMessage = cancelMessage
+                    cancelling = cancelling, cancelMessage = cancelMessage,
+                    onBackToTrips = onBack
                 )
             }
         }
@@ -171,8 +181,14 @@ fun ReservationDetailsContent(
     onCancel: (() -> Unit)? = null,
     cancelling: Boolean = false,
     cancelMessage: String = "",
-    today: String = reservationDateToday()
+    today: String = reservationDateToday(),
+    onBackToTrips: () -> Unit = {},
+    onDownloadCsv: ((String) -> Unit)? = null
 ) {
+    if (booking.status == RESERVATION_CANCELLED) {
+        CancellationConfirmation(booking, site, onBackToTrips, onDownloadCsv)
+        return
+    }
     var confirming by rememberSaveable { mutableStateOf(false) }
     val status = reservationStatusLabel(booking, today)
     val statusColor = when (status) {
@@ -241,6 +257,79 @@ fun ReservationDetailsContent(
                 TextButton(onClick = { confirming = false }) { Text("Keep reservation") }
             }
         )
+    }
+}
+
+/** Receipt shown after a reservation is cancelled (US 01.07.02). */
+@Composable
+internal fun CancellationConfirmation(
+    booking: Reservation,
+    site: Campsite?,
+    onBackToTrips: () -> Unit,
+    onDownloadCsv: ((String) -> Unit)? = null
+) {
+    val context = LocalContext.current
+    val campsite = site ?: Campsite(name = booking.campsiteName)
+    val guests = booking.guestCount.coerceAtLeast(1)
+    val total = booking.totalPrice.takeIf { it > 0.0 }
+        ?: (site?.pricePerNight ?: 0.0) * reservationNights(booking.checkInDate, booking.checkOutDate).size
+    val csv = remember(booking, campsite, guests, total) {
+        reservationCsv(campsite, booking.checkInDate, booking.checkOutDate, guests, total, RESERVATION_CANCELLED)
+    }
+    val fileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null && !writeReservationCsv(csv) { context.contentResolver.openOutputStream(uri) }) {
+            Toast.makeText(context, "Could not download CSV", Toast.LENGTH_LONG).show()
+        }
+    }
+    BackHandler(onBack = onBackToTrips)
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Box(Modifier.size(76.dp).background(PinedrawColors.Teal, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Check, contentDescription = null, tint = PinedrawColors.Background,
+                modifier = Modifier.size(42.dp))
+        }
+        Text("Reservation cancelled", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("A cancellation confirmation is in your notifications.", color = PinedrawColors.TextSecondary)
+        Card(
+            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F5EE), contentColor = PinedrawColors.Background)
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                CancellationRow("Reservation", booking.id)
+                CancellationRow("Campsite", booking.campsiteName.ifBlank { campsite.name })
+                CancellationRow("Dates", "${formatReservationDate(booking.checkInDate)} – ${formatReservationDate(booking.checkOutDate)}")
+                CancellationRow("Status", RESERVATION_CANCELLED)
+            }
+        }
+        OutlinedButton(
+            onClick = {
+                if (onDownloadCsv != null) onDownloadCsv(csv)
+                else fileLauncher.launch("cancellation.csv")
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = MaterialTheme.shapes.large
+        ) {
+            Text("Download CSV confirmation", fontWeight = FontWeight.Bold)
+        }
+        Button(
+            onClick = onBackToTrips,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = MaterialTheme.shapes.large
+        ) {
+            Text("Back to my trips", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun CancellationRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(label, Modifier.weight(1f), color = PinedrawColors.Background.copy(alpha = 0.65f))
+        Text(value, Modifier.weight(1.4f), fontWeight = FontWeight.SemiBold)
     }
 }
 

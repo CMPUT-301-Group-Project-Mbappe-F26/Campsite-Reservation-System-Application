@@ -16,8 +16,8 @@ import java.util.TimeZone
  * The functions here do no database work, so the screens, ReservationService and unit
  * tests all share the same rules.
  *
- * Outstanding issues: cancelling or rejecting does not yet notify the entrant (US 01.07.02),
- * and cancellation policies are shown but not enforced because the app takes no payments.
+ * Outstanding issues: rejecting does not yet notify the entrant, and cancellation policies
+ * are shown but not enforced because the app takes no payments.
  * Dates use the device's time zone.
  */
 
@@ -47,6 +47,8 @@ const val RESERVATION_COMPLETED = "Completed"
  * @property checkInDate First night of the stay.
  * @property checkOutDate Day the entrant leaves; this night is not part of the stay.
  * @property status Booking status: [RESERVATION_CONFIRMED], [RESERVATION_CANCELLED] or [RESERVATION_REJECTED].
+ * @property guestCount Number of guests saved when the reservation was made.
+ * @property totalPrice Total reservation price saved for confirmations and CSV downloads.
  */
 data class Reservation(
     val id: String = "",
@@ -56,7 +58,9 @@ data class Reservation(
     val campsiteName: String = "",
     val checkInDate: String = "",
     val checkOutDate: String = "",
-    val status: String = RESERVATION_CONFIRMED
+    val status: String = RESERVATION_CONFIRMED,
+    val guestCount: Int = 1,
+    val totalPrice: Double = 0.0
 )
 
 /**

@@ -41,7 +41,8 @@ internal fun ColumnScope.LotteryReservationFlow(
     onBack: () -> Unit,
     onReserved: () -> Unit,
     onRefresh: () -> Unit,
-    today: String = reservationDateToday()
+    today: String = reservationDateToday(),
+    groupSize: Int = 1
 ) {
     val multiple = selection.lottery.offeredCampsiteIds().distinct().size > 1
     var chosenId by rememberSaveable(selection.lottery.id) {
@@ -59,7 +60,8 @@ internal fun ColumnScope.LotteryReservationFlow(
                 onBack = { if (multiple) chosenId = null else onBack() },
                 onReserved = onReserved, blockedNights = chosen.blockedNights,
                 firstAvailableNight = requireNotNull(chosen.firstAvailableNight),
-                backLabel = if (multiple) "Change campsite" else "Back", onDeclined = onBack, today = today)
+                backLabel = if (multiple) "Change campsite" else "Back", onDeclined = onBack,
+                today = today, groupSize = groupSize)
         }
     }
 }

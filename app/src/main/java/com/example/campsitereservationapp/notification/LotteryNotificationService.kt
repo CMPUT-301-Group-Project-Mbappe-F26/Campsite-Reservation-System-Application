@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.edit
 import androidx.core.content.ContextCompat
 import com.example.campsitereservationapp.MainActivity
 import com.example.campsitereservationapp.R
@@ -60,7 +61,20 @@ class LotteryNotificationService(private val context: Context) {
                     if (!seen.getBoolean(key, false) && showNotice(
                             document.id, document.getString("title").orEmpty(),
                             document.getString("message").orEmpty()
-                        )) seen.edit().putBoolean(key, true).apply()
+                        )) seen.edit { putBoolean(key, true) }
+                }
+            }
+        // Messages sent by a campsite owner use the same notification channel.
+        val ownerNotifications = db.collection("notifications")
+            .whereArrayContains("recipientIds", user.id)
+            .addSnapshotListener { snapshot, _ ->
+                if (!listening) return@addSnapshotListener
+                snapshot?.documents?.forEach { document ->
+                    val key = "${user.id}_owner_${document.id}"
+                    if (!seen.getBoolean(key, false) && showNotice(
+                            document.id, document.getString("title").orEmpty(),
+                            document.getString("message").orEmpty()
+                        )) seen.edit { putBoolean(key, true) }
                 }
             }
         val registration = db.collection("lotteries")
@@ -78,7 +92,7 @@ class LotteryNotificationService(private val context: Context) {
                         .addOnSuccessListener { campsite ->
                             val name = campsite.getString("name").orEmpty()
                             if (listening && name.isNotBlank() && show(result, lottery, name)) {
-                                seen.edit().putBoolean(key, true).apply()
+                                seen.edit { putBoolean(key, true) }
                             }
                             loading.remove(key)
                         }
@@ -90,6 +104,7 @@ class LotteryNotificationService(private val context: Context) {
             listening = false
             registration.remove()
             notices.remove()
+            ownerNotifications.remove()
         }
     }
 
@@ -153,7 +168,7 @@ class LotteryNotificationService(private val context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Lottery results",
+                "Lottery notifications",
                 NotificationManager.IMPORTANCE_HIGH
             )
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
