@@ -34,6 +34,7 @@ import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.formatReservationDate
 import com.example.campsitereservationapp.lottery.JoinWaitingListDialog
 import com.example.campsitereservationapp.lottery.LeaveWaitingListDialog
+import com.example.campsitereservationapp.notification.OwnerNotificationComposer
 import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.LotteryService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
@@ -89,6 +90,7 @@ fun CampsiteDetailsScreen(
     var creatingLottery by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
     var editingLotteryId by rememberSaveable(campsiteId, ownerId) { mutableStateOf<String?>(null) }
     var ownerLotteries by remember(campsiteId, ownerId) { mutableStateOf<List<Lottery>>(emptyList()) }
+    var currentOwnerLottery by remember(campsiteId, ownerId) { mutableStateOf<Lottery?>(null) }
     var editingCampsite by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
     var joining by rememberSaveable(campsiteId) { mutableStateOf(false) }
     var leaving by rememberSaveable(campsiteId) { mutableStateOf(false) }
@@ -98,6 +100,7 @@ fun CampsiteDetailsScreen(
         error = ""
         campsite = null
         lottery = null
+        currentOwnerLottery = null
         try {
             check(ownerId != null) { "Not signed in" }
             val result = withTimeoutOrNull(20000) { service.getCampsite(campsiteId) }
@@ -109,6 +112,8 @@ fun CampsiteDetailsScreen(
                 if (result.isOwnedBy(ownerId)) {
                     ownerLotteries = lotteryService.getLotteriesForCampsite(campsiteId)
                         .filter { it.ownerId == ownerId && !it.drawCompleted && it.pending.isEmpty() && it.booked.isEmpty() }
+                    currentOwnerLottery = lotteryService.getCurrentLottery(campsiteId)
+                        ?.takeIf { it.ownerId == ownerId }
                 }
                 if (entrantId != null && result.ownerId != entrantId) {
                     lottery = withTimeoutOrNull(20000) {
@@ -326,6 +331,13 @@ fun CampsiteDetailsScreen(
                         }
                         // Only the owner sees who has joined the waiting list
                         if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) LotteryEntrantsSection(site.id)
+                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null) && currentOwnerLottery != null) {
+                            OwnerNotificationComposer(
+                                campsiteId = site.id,
+                                campsiteName = site.name.ifBlank { "this campsite" },
+                                lottery = currentOwnerLottery!!
+                            )
+                        }
                         if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null))
                             LotteryCollaborationSection(site, refresh, onChanged = { refresh++ })
                         // Only the owner sees who has booked the campsite (US 02.07.01 to US 02.07.03)

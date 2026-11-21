@@ -11,6 +11,7 @@ import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
 import com.example.campsitereservationapp.model.Reservation
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,7 +31,8 @@ class CancelReservationIntentTest {
     private val twoJack = Reservation(
         id = "res-two-jack", entrantId = "entrant-amir", campsiteId = "site-two-jack",
         lotteryId = "lottery-summer", campsiteName = "Two Jack Lakeside",
-        checkInDate = "2027-07-02", checkOutDate = "2027-07-04"
+        checkInDate = "2027-07-02", checkOutDate = "2027-07-04",
+        guestCount = 4, totalPrice = 77.0
     )
     private val site = Campsite(
         id = "site-two-jack", name = "Two Jack Lakeside", location = "Banff, AB",
@@ -66,14 +68,23 @@ class CancelReservationIntentTest {
     @Test
     fun cancelledReservationShowsItsStatusAndNoCancelButton() {
         val cancelled = twoJack.copy(status = RESERVATION_CANCELLED)
+        var csv = ""
+        var wentBack = false
         composeRule.setContent {
             ReservationDetailsContent(
                 cancelled, site, onCancel = null,
-                cancelMessage = "Your reservation has been cancelled.", today = today
+                cancelMessage = "Your reservation has been cancelled.", today = today,
+                onBackToTrips = { wentBack = true }, onDownloadCsv = { csv = it }
             )
         }
-        composeRule.onNodeWithText("Cancelled").assertIsDisplayed()
-        composeRule.onNodeWithText("Your reservation has been cancelled.").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Reservation cancelled").assertIsDisplayed()
+        composeRule.onNodeWithText("A cancellation confirmation is in your notifications.").assertIsDisplayed()
+        composeRule.onNodeWithText("Download CSV confirmation").performClick()
+        assertTrue(csv.contains("Campsite name,Location,Check-in,Check-out,Guests,Price,Status"))
+        assertTrue(csv.contains("Two Jack Lakeside"))
+        assertTrue(csv.contains("2027-07-02,2027-07-04,4,$77.00 CAD,Cancelled"))
+        composeRule.onNodeWithText("Back to my trips").performClick()
+        assertTrue(wentBack)
         composeRule.onNodeWithText("Cancel reservation").assertDoesNotExist()
     }
 

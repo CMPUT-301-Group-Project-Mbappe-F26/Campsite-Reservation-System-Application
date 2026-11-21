@@ -2,14 +2,19 @@ package com.example.campsitereservationapp.reservation
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,6 +34,8 @@ import com.example.campsitereservationapp.model.reservationDateFromUtcMillis
 import com.example.campsitereservationapp.model.reservationDateToUtcMillis
 import com.example.campsitereservationapp.model.reservationNights
 import com.example.campsitereservationapp.model.reservationDateToday
+import com.example.campsitereservationapp.notification.reservationCsv
+import com.example.campsitereservationapp.notification.writeReservationCsv
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -81,7 +88,8 @@ fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit)
                 }
             }
             else -> LotteryReservationFlow(selection, controller::reserve, controller::decline,
-                onBack, onReserved, onRefresh = { controller.load(lotteryId) })
+                onBack, onReserved, onRefresh = { controller.load(lotteryId) },
+                groupSize = selection.lottery.registeredGroupSizes[entrantId] ?: 1)
         }
     }
 }
@@ -121,11 +129,13 @@ internal fun ColumnScope.ReserveFlow(
     firstAvailableNight: String = lottery.stayStartDate,
     backLabel: String = "Back",
     onDeclined: () -> Unit = onBack,
-    today: String = reservationDateToday()
+    today: String = reservationDateToday(),
+    groupSize: Int = 1,
+    onDownloadCsv: ((String) -> Unit)? = null
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var confirming by rememberSaveable { mutableStateOf(false) }
+    var reservationConfirmed by rememberSaveable { mutableStateOf(false) }
     var rulesAccepted by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -149,6 +159,19 @@ internal fun ColumnScope.ReserveFlow(
     val checkOut = picker.selectedEndDateMillis?.let(::reservationDateFromUtcMillis)
     val nights = if (checkIn != null && checkOut != null) reservationNights(checkIn, checkOut) else emptyList()
     val datesOpen = nights.isNotEmpty() && nights.all { nightOpen(it) }
+
+    if (reservationConfirmed) {
+        ReservationConfirmation(
+            campsite = campsite,
+            checkIn = checkIn.orEmpty(),
+            checkOut = checkOut.orEmpty(),
+            groupSize = groupSize,
+            total = campsite.pricePerNight * nights.size,
+            onDownloadCsv = onDownloadCsv,
+            onDone = onReserved
+        )
+        return
+    }
 
     if (!confirming) {
         ReserveBackButton(onBack, backLabel)
@@ -217,10 +240,7 @@ internal fun ColumnScope.ReserveFlow(
                         when {
                             result == null -> error = "Could not confirm your reservation. Please try again."
                             result.isNotEmpty() -> error = result
-                            else -> {
-                                Toast.makeText(context, "Reservation confirmed", Toast.LENGTH_LONG).show()
-                                onReserved()
-                            }
+                            else -> reservationConfirmed = true
                         }
                     } catch (_: Exception) {
                         coroutineContext.ensureActive() // Stop normally when leaving the screen.
@@ -233,6 +253,88 @@ internal fun ColumnScope.ReserveFlow(
             enabled = !saving && (rulesAccepted || !campsite.requireRulesAcceptance),
             modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
         ) { Text(if (saving) "Reserving..." else "Reserve", fontWeight = FontWeight.Bold) }
+    }
+}
+
+/** Confirmation shown after the reservation has been saved (US 01.05.01 and US 01.05.02). */
+@Composable
+internal fun ColumnScope.ReservationConfirmation(
+    campsite: Campsite,
+    checkIn: String,
+    checkOut: String,
+    groupSize: Int,
+    total: Double,
+    onDownloadCsv: ((String) -> Unit)? = null,
+    onDone: () -> Unit
+) {
+    val context = LocalContext.current
+    val csv = remember(campsite, checkIn, checkOut, groupSize, total) {
+        reservationCsv(campsite, checkIn, checkOut, groupSize, total)
+    }
+    val fileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null && !writeReservationCsv(csv) { context.contentResolver.openOutputStream(uri) }) {
+            Toast.makeText(context, "Could not download CSV", Toast.LENGTH_LONG).show()
+        }
+    }
+    BackHandler(onBack = onDone)
+    IconButton(onClick = onDone, modifier = Modifier.padding(12.dp)) {
+        Icon(Icons.Default.Close, contentDescription = "Close")
+    }
+    Column(
+        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Box(
+            Modifier.size(76.dp).background(PinedrawColors.Lime, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Check, contentDescription = null, tint = PinedrawColors.Background,
+                modifier = Modifier.size(42.dp))
+        }
+        Text("You’re going camping!", style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold)
+        Text("Your reservation is confirmed.", color = PinedrawColors.TextSecondary)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFFF1F5EE),
+                contentColor = PinedrawColors.Background
+            )
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(campsite.name.ifBlank { "Unnamed campsite" },
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (campsite.location.isNotBlank()) Text(campsite.location,
+                    color = PinedrawColors.Background.copy(alpha = 0.7f))
+                HorizontalDivider(color = PinedrawColors.Background.copy(alpha = 0.15f))
+                ReserveRow("Guests", if (groupSize == 1) "1 guest" else "$groupSize guests")
+                ReserveRow("Check-in", formatReservationDate(checkIn))
+                ReserveRow("Check-out", formatReservationDate(checkOut))
+                ReserveRow("Total paid", String.format(Locale.CANADA, "$%.2f CAD", total))
+            }
+        }
+        OutlinedButton(
+            onClick = {
+                if (onDownloadCsv != null) onDownloadCsv(csv)
+                else fileLauncher.launch("reservation.csv")
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+            shape = MaterialTheme.shapes.large
+        ) {
+            Text("Download CSV", fontWeight = FontWeight.Bold)
+        }
+        Button(
+            onClick = onDone,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+            shape = MaterialTheme.shapes.large
+        ) {
+            Text("View my trip", fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(12.dp))
     }
 }
 
