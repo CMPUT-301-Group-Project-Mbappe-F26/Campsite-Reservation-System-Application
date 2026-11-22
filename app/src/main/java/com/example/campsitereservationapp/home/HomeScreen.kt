@@ -36,6 +36,7 @@ import com.example.campsitereservationapp.qr.CampsiteQr
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.launch
+import java.util.Locale
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 
@@ -383,16 +384,14 @@ fun HomeScreen(
                                 // Rating and no ratings are available
                                 if (campsite.averageRating != null) {
                                     val rating = campsite.averageRating
-                                    val fullStars = rating.toInt()
-
                                     Row {
                                         Text(  // Stars using unicode
-                                            text = "\u2605".repeat(fullStars) + "\u2606".repeat(5 - fullStars),
+                                            text = getRatingStars(rating),
                                             color = Color(0xFFFFC107)
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = "$rating / 5",
+                                            text = getRatingText(rating),
                                             style = MaterialTheme.typography.bodySmall
                                         )
                                     }
@@ -478,6 +477,7 @@ fun getRatingText(rating: Double?): String {
         return "No ratings yet"
     }
 
-    return "$rating / 5"
+    // Averages rarely divide evenly, so show one decimal place.
+    return String.format(Locale.CANADA, "%.1f / 5", rating)
 }
 

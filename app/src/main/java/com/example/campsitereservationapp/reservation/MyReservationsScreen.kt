@@ -1,5 +1,6 @@
 package com.example.campsitereservationapp.reservation
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,12 +17,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
+import com.example.campsitereservationapp.feedback.StayFeedback
+import com.example.campsitereservationapp.feedback.StayFeedbackActions
 import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.activeReservations
 import com.example.campsitereservationapp.model.formatReservationDate
 import com.example.campsitereservationapp.model.pastReservations
 import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.service.CampsiteService
+import com.example.campsitereservationapp.service.FeedbackService
 import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.CancellationException
@@ -31,7 +35,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 /*
  * My Reservations tab: the signed-in entrant's upcoming reservations (US 01.06.01) and past
  * stays (US 01.06.02), plus a card for each lottery spot they won but have not used yet,
- * which opens ReserveScreen.
+ * which opens ReserveScreen. Past stays can be rated (US 01.13.01) and reviewed (US 01.13.02).
  *
  * [MyReservationsScreen] loads the data from Firebase. [MyReservationsContent] only draws
  * it, so intent tests can check the screen without Firebase.
@@ -50,10 +54,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (String) -> Unit) {
     val service = remember { ReservationService() }
     val campsiteService = remember { CampsiteService() }
+    val feedbackService = remember { FeedbackService() }
     val entrantId = rememberCampsiteOwnerId()
     var wins by remember(entrantId) { mutableStateOf<List<Pair<String, String>>>(emptyList()) } // Lottery ID and campsite name
     var reservations by remember(entrantId) { mutableStateOf<List<Reservation>>(emptyList()) }
     var past by remember(entrantId) { mutableStateOf<List<Reservation>>(emptyList()) }
+    var feedback by remember(entrantId) { mutableStateOf<StayFeedback?>(null) }
     var loading by remember(entrantId) { mutableStateOf(true) }
     var error by remember(entrantId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
@@ -69,6 +75,20 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
                 val today = reservationDateToday()
                 reservations = activeReservations(result, today)
                 past = pastReservations(result, today)
+            }
+            // Past stays can still be shown if ratings and reviews cannot be loaded.
+            feedback = try {
+                withTimeoutOrNull(20000) {
+                    StayFeedback(
+                        stars = feedbackService.getMyRatings().associate { it.id to it.stars },
+                        reviewed = feedbackService.getMyReviews().map { it.id }.toSet()
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("MyReservations", "Could not load ratings and reviews", e)
+                null
             }
             // Reservations can still be shown if won lotteries cannot be loaded.
             wins = try {
@@ -90,8 +110,29 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
         }
     }
 
+    // Saves a rating or review, and returns a message when it could not be saved.
+    suspend fun save(what: String, stay: Reservation, action: suspend () -> String?): String? = try {
+        action()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w("MyReservations", "Could not save $what for ${stay.id}", e)
+        "Could not save your $what. Check your connection and try again."
+    }
+
     MyReservationsContent(
-        wins, reservations, loading, error, onRetry = { refresh++ }, onReservationClick, onReserveClick, past = past
+        wins, reservations, loading, error, onRetry = { refresh++ }, onReservationClick, onReserveClick, past = past,
+        feedback = feedback,
+        onRate = { stay, stars ->
+            save("rating", stay) { feedbackService.rate(stay.id, stars) }.also { problem ->
+                if (problem == null) feedback = feedback?.let { it.copy(stars = it.stars + (stay.id to stars)) }
+            }
+        },
+        onReview = { stay, text ->
+            save("review", stay) { feedbackService.postReview(stay.id, text) }.also { problem ->
+                if (problem == null) feedback = feedback?.let { it.copy(reviewed = it.reviewed + stay.id) }
+            }
+        }
     )
 }
 
@@ -110,6 +151,9 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
  * @param onReservationClick Opens the details of the tapped reservation.
  * @param onReserveClick Opens the reserve screen for the tapped lottery win.
  * @param past Stays that have ended, most recent first.
+ * @param feedback What the entrant has rated and reviewed, or null to hide those buttons.
+ * @param onRate Saves a rating of a past stay; returns a message when it failed, or null.
+ * @param onReview Saves a review of a past stay; returns a message when it failed, or null.
  */
 @Composable
 fun MyReservationsContent(
@@ -120,7 +164,10 @@ fun MyReservationsContent(
     onRetry: () -> Unit,
     onReservationClick: (String) -> Unit,
     onReserveClick: (String) -> Unit,
-    past: List<Reservation> = emptyList()
+    past: List<Reservation> = emptyList(),
+    feedback: StayFeedback? = null,
+    onRate: suspend (Reservation, Int) -> String? = { _, _ -> null },
+    onReview: suspend (Reservation, String) -> String? = { _, _ -> null }
 ) {
     var showPast by rememberSaveable { mutableStateOf(false) }
     val shown = if (showPast) past else reservations
@@ -212,6 +259,9 @@ fun MyReservationsContent(
                                     color = if (showPast) PinedrawColors.TextMuted else PinedrawColors.Lime,
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                if (showPast && feedback != null) {
+                                    StayFeedbackActions(reservation, feedback, onRate, onReview)
+                                }
                             }
                             Icon(
                                 Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
