@@ -29,6 +29,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.campsitereservationapp.feedback.AdminRatingsSection
+import com.example.campsitereservationapp.feedback.CampsiteReviewsSection
+import com.example.campsitereservationapp.home.getRatingStars
+import com.example.campsitereservationapp.home.getRatingText
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.formatReservationDate
@@ -55,6 +59,8 @@ import java.util.Locale
  * opens [LotteryCreation] for the loaded campsite; closing that form returns here.
  * The owner also sees the current lottery's waiting list ([LotteryEntrantsSection]) and the
  * campsite's active, past and cancelled reservations ([CampsiteReservationsSection]).
+ * Everyone sees the campsite's reviews ([CampsiteReviewsSection]), and an admin can remove
+ * reviews and ratings ([AdminRatingsSection]).
  * Loading failures display an error with a retry action.
  *
  * @param campsiteId Firestore document ID of the campsite to load.
@@ -285,18 +291,15 @@ fun CampsiteDetailsScreen(
 
                             if (site.averageRating != null) {  // Display campsite rating if available
                                 val rating = site.averageRating
-                                val fullStars = rating.toInt().coerceIn(0, 5)
-                                val stars = "\u2605".repeat(fullStars) + "\u2606".repeat(5 - fullStars)
-
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = stars,
+                                        text = getRatingStars(rating),
                                         color = Color(0xFFFFC107)
                                     )
 
                                     Spacer(modifier = Modifier.width(8.dp))
                                     // Rating
-                                    Text(text = "$rating / 5")
+                                    Text(text = getRatingText(rating))
                                 }
                             } else {
                                 Text(  // No rating
@@ -378,6 +381,13 @@ fun CampsiteDetailsScreen(
                                 onSaved = { campsite = site.copy(rules = it) }
                             )
                         }
+                        CampsiteReviewsSection(site.id, asAdmin)
+                        if (asAdmin) AdminRatingsSection(site.id, onCampsiteChanged = { updated ->
+                            campsite = campsite?.copy(
+                                averageRating = updated.averageRating, ratingCount = updated.ratingCount,
+                                ratingTotal = updated.ratingTotal
+                            )
+                        })
                     }
                 }
             }

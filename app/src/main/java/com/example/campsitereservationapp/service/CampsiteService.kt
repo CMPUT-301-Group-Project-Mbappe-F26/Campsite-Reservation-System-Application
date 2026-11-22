@@ -139,7 +139,9 @@ class CampsiteService {
             check(CampsiteForm.fromCampsite(latest) == original) { "This campsite changed. Reopen the form before saving." }
             val updated = details.copy(
                 id = id, ownerId = uid, imageUrls = urls, published = latest.published,
-                averageRating = latest.averageRating, requireRulesAcceptance = latest.requireRulesAcceptance,
+                averageRating = latest.averageRating, ratingCount = latest.ratingCount,
+                ratingTotal = latest.ratingTotal, lastRatingId = latest.lastRatingId,
+                requireRulesAcceptance = latest.requireRulesAcceptance,
                 availableDays = if (form.availableDays.sorted() == original.availableDays.sorted()) {
                     latest.availableDays
                 } else details.availableDays
