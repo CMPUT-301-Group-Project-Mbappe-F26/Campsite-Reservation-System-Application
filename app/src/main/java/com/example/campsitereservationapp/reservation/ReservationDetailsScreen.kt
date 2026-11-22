@@ -38,6 +38,7 @@ import com.example.campsitereservationapp.model.reservationStatusLabel
 import com.example.campsitereservationapp.notification.reservationCsv
 import com.example.campsitereservationapp.notification.writeReservationCsv
 import com.example.campsitereservationapp.service.CampsiteService
+import com.example.campsitereservationapp.messaging.canMessageOwner
 import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.CancellationException
@@ -205,9 +206,9 @@ fun ReservationDetailsContent(
                 Text(status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     color = statusColor, fontWeight = FontWeight.Bold)
             }
-            if (onOpenMessages != null) {
-                OutlinedButton(onClick = onOpenMessages, modifier = Modifier.fillMaxWidth()) {
-                    Text("Message campsite owner")
+            if (onOpenMessages != null && canMessageOwner(booking)) {
+                OutlinedButton(onClick = onOpenMessages, enabled = !cancelling, modifier = Modifier.fillMaxWidth()) {
+                    Text("Message owner")
                 }
             }
             ReservationCard {
