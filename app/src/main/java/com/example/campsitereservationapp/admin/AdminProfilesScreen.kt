@@ -35,13 +35,19 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * Outstanding issues: (insert issues here)
  */
-
 @Composable
-fun adminProfileScreen() {
-    var loading by remember { mutableStateOf(true) }
+fun AdminProfilesScreen(
+    onBack: () -> Unit,
+    onProfileClick: (String) -> Unit
+) {
     val userService = remember { UserService() }
-    var error by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var rows by remember { mutableStateOf<List<User>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf("") }
+    var removingId by remember { mutableStateOf<String?>(null) }
+    var refresh by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         loading = true
@@ -68,27 +74,103 @@ fun adminProfileScreen() {
     } else if (rows.isEmpty()) {
         Text("No profiles found.")
     } else {
-        LazyColumn {
-            items(rows) { user ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Text(text = user.name)
-                        Text(text = user.email)
-                        Text(
-                            text = when {
-                                user.isAdmin -> "Admin"
-                                user.isOwner -> "Campsite Owner"
-                                else -> "Entrant"
-                            }
-                        )
-                    }
+        Column(
+            Modifier.fillMaxSize()
+                .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
+                .statusBarsPadding().navigationBarsPadding().padding(horizontal = 20.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Admin Dashboard")
                 }
+                TextButton(onClick = { refresh++ }, enabled = !loading && removingId == null) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Refresh")
+                }
+            }
+            Text("All profiles", style = MaterialTheme.typography.headlineLarge)
+            Spacer(Modifier.height(8.dp))
+            Text("Every profile registered on Pinedraw.", color = PinedrawColors.TextSecondary)
+            Spacer(Modifier.height(16.dp))
+
+            when {
+                loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = PinedrawColors.Lime)
+                }
+                error.isNotEmpty() -> Column(Modifier.padding(vertical = 24.dp)) {
+                    Text(error, color = PinedrawColors.Coral)
+                    TextButton(onClick = { refresh++ }) { Text("Try again") }
+                }
+                else -> //AdminProfileList(
+//                    rows = rows,
+//                    removingId = removingId,
+//                    onProfileClick = onProfileClick,
+//                    onRemove = { row ->
+//                        removingId = row.id
+//                        scope.launch {
+//                            val message = try {
+//                                val removed = withTimeoutOrNull(20000) { userService.deleteProfile(row.id) }
+//                                if (removed == null) "Could not remove ${row.name}. Please try again."
+//                                else {
+//                                    rows = rows.filter { it.id != row.id }
+//                                    "${row.name} was removed"
+//                                }
+//                            } catch (_: Exception) {
+//                                coroutineContext.ensureActive() // Stop normally when leaving the screen.
+//                                "Could not remove ${row.name}. Please try again."
+//                            } finally {
+//                                removingId = null
+//                            }
+//                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+//                        }
+//                    }
+//                )
+                    // Need to change to make cleaner UI and allow for deletion;
+                    // using for now to test
+                    Column {
+                        Text("${rows.size} ${if (rows.size == 1) "profile" else "profiles"}", color = PinedrawColors.TextMuted)
+                        Spacer(Modifier.height(12.dp))
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            contentPadding = PaddingValues(bottom = 24.dp)
+                        ) {
+                            items(rows) { user ->
+                                Card(
+                                    onClick = { onProfileClick(user.id) },
+                                    modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
+                                    colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp)
+                                    ) {
+                                        Text(text = when {
+                                                user.name != "" -> "Username: ${user.name}"
+                                                else -> "No username"
+                                            },
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(text = when {
+                                                user.email != "" -> "Email: ${user.email}"
+                                                else -> "No registered email"
+                                        },
+                                            color = PinedrawColors.TextSecondary)
+                                        Text(
+                                            text = when {
+                                                user.isAdmin -> "Admin"
+                                                user.isOwner -> "Campsite Owner"
+                                                else -> "Entrant"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = PinedrawColors.TextSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
             }
         }
     }

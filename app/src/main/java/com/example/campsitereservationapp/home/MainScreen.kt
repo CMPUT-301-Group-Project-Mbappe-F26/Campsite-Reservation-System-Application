@@ -29,7 +29,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.campsitereservationapp.admin.AdminCampsitesScreen
 import com.example.campsitereservationapp.admin.AdminDashboardScreen
+import com.example.campsitereservationapp.admin.AdminImagesScreen
 import com.example.campsitereservationapp.admin.AdminMessageLogsScreen
+import com.example.campsitereservationapp.admin.AdminProfilesScreen
 import com.example.campsitereservationapp.campsite.CreateCampsiteScreen
 import com.example.campsitereservationapp.campsite.CampsiteRegistrationViewModel
 import com.example.campsitereservationapp.campsite.HostDashboardScreen
@@ -85,6 +87,8 @@ fun MainScreen(
     var reserveLotteryId by rememberSaveable { mutableStateOf<String?>(null) }
     var adminMode by rememberSaveable { mutableStateOf(false) }
     var showingAdminCampsites by rememberSaveable { mutableStateOf(false) }
+    var showingAdminProfiles by rememberSaveable { mutableStateOf(false) }
+    var showingAdminImages by rememberSaveable { mutableStateOf(false) }
     var showingMessageLogs by rememberSaveable { mutableStateOf(false) }
     var adminCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from the admin list
     val registration: CampsiteRegistrationViewModel = viewModel()
@@ -121,6 +125,8 @@ fun MainScreen(
             showingMessageLogs -> showingMessageLogs = false
             adminCampsiteId != null -> adminCampsiteId = null
             showingAdminCampsites -> showingAdminCampsites = false
+            showingAdminProfiles -> showingAdminProfiles = false
+            showingAdminImages -> showingAdminImages = false
             else -> adminMode = false
         }
     }
@@ -179,12 +185,22 @@ fun MainScreen(
                     onBack = { showingAdminCampsites = false },
                     onCampsiteClick = { adminCampsiteId = it }
                 )
+                adminMode && showingAdminProfiles -> AdminProfilesScreen(
+                    onBack = { showingAdminProfiles = false },
+                    onProfileClick = { adminCampsiteId = it }
+                )
+                adminMode && showingAdminImages -> AdminImagesScreen(
+                    onBack = { showingAdminImages = false },
+                    onImageClick = { adminCampsiteId = it }
+                )
                 adminMode && user.isAdmin && showingMessageLogs -> AdminMessageLogsScreen(
                     onBack = { showingMessageLogs = false }
                 )
                 adminMode -> AdminDashboardScreen(
                     onBack = { adminMode = false },
                     onCampsitesClick = { showingAdminCampsites = true },
+                    onProfilesClick = { showingAdminProfiles = true },
+                    onImagesClick = { showingAdminImages = true },
                     onMessageLogsClick = { if (user.isAdmin) showingMessageLogs = true }
                 )
                 hostMode && campsiteId != null -> CampsiteDetailsScreen(

@@ -27,12 +27,16 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
  *
  * @param onBack Goes back to the previous screen.
  * @param onCampsitesClick Opens the campsite management screen.
+ * @param onProfilesClick Opens the profile management screen.
+ * @param onImagesClick Opens the image management screen.
  * @param onMessageLogsClick Opens the owner message logs.
  */
 @Composable
 fun AdminDashboardScreen(
     onBack: () -> Unit,
     onCampsitesClick: () -> Unit,
+    onProfilesClick: () -> Unit,
+    onImagesClick: () -> Unit,
     onMessageLogsClick: (() -> Unit)? = null
 ) {
     Column(
@@ -79,6 +83,34 @@ fun AdminDashboardScreen(
             Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(8.dp))
             Text("Campsites", fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = onProfilesClick,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PinedrawColors.Lime,
+                contentColor = PinedrawColors.Ink
+            )
+        ) {
+            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Profiles", fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = onImagesClick,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PinedrawColors.Lime,
+                contentColor = PinedrawColors.Ink
+            )
+        ) {
+            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Images", fontWeight = FontWeight.Bold)
         }
         if (onMessageLogsClick != null) {
             Spacer(Modifier.height(16.dp))
