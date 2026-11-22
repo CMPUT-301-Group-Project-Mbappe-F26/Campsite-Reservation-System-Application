@@ -46,8 +46,6 @@ fun AdminProfileScreen(
     onBack: () -> Unit
 ) {
     val userService = remember { UserService() }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var row by remember { mutableStateOf<List<User>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
@@ -67,7 +65,7 @@ fun AdminProfileScreen(
             if (result == null) error = "Profile detail retrieval timed out."
             else {
                 row = result
-                user = user
+                user = row[0]
             }
         } catch (_: Exception) {
             coroutineContext.ensureActive() // Stop normally when leaving the screen.
