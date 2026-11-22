@@ -38,6 +38,7 @@ fun ProfileScreen(
     onEditClick: () -> Unit,
     onHostClick: () -> Unit = {},
     onAdminClick: () -> Unit = {},
+    onPolicyClick: () -> Unit = {},
     savingNotifications: Boolean = false,
     onNotificationsChanged: (Boolean) -> Unit = {},
     onSaveImage: suspend (Uri?) -> Unit = {}
@@ -145,14 +146,14 @@ fun ProfileScreen(
         OptionGroup {
             ProfileOption("Personal information", Icons.Default.Person, enabled = !savingNotifications, onClick = onEditClick)
             OptionDivider()
-            ProfileOption("Policy & guidelines", Icons.Default.Info) {}
-            OptionDivider()
             ProfileOption("Sign-in & security", Icons.Default.Lock) {}
         }
 
         Spacer(Modifier.height(24.dp))
         SectionLabel("SETTINGS")
         OptionGroup {
+            ProfileOption("Policy & guidelines", Icons.Default.Info, onClick = onPolicyClick)
+            OptionDivider()
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically

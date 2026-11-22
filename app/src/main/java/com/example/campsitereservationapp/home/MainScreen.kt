@@ -50,6 +50,7 @@ import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
+import com.example.campsitereservationapp.profile.PolicyGuidelinesScreen
 
 // Handles the main tabs, host screen and admin screen navigation.
 /**
@@ -73,6 +74,7 @@ fun MainScreen(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf(false) }
+    var showingPolicies by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var deletingProfile by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -127,7 +129,11 @@ fun MainScreen(
             else -> adminMode = false
         }
     }
-    BackHandler(enabled = showingCampsiteMessages || messageReservationId != null) {
+    BackHandler(enabled = showingPolicies) {
+        showingPolicies = false
+        selectedTab = 3
+    }
+    BackHandler(enabled = !showingPolicies && (showingCampsiteMessages || messageReservationId != null)) {
         if (messageReservationId != null) messageReservationId = null
         else showingCampsiteMessages = false
     }
@@ -151,6 +157,12 @@ fun MainScreen(
                 .padding(padding)
         ) {
             when {
+                showingPolicies -> PolicyGuidelinesScreen(
+                    onBack = {
+                        showingPolicies = false
+                        selectedTab = 3
+                    }
+                )
                 messageReservationId != null -> ReservationMessagesScreen(
                     reservationId = messageReservationId!!,
                     userId = user.id,
@@ -310,6 +322,7 @@ fun MainScreen(
                     onEditClick = { if (!saving) editing = true },
                     onHostClick = { hostMode = true },
                     onAdminClick = { if (user.isAdmin) adminMode = true },
+                    onPolicyClick = { showingPolicies = true },
                     savingNotifications = saving,
                     onSaveImage = { uri ->
                         check(!saving && !deletingProfile) { "Please wait for your profile to finish saving." }
@@ -355,6 +368,11 @@ fun MainScreen(
             }
         }
     }
+}
+
+@Composable
+fun PolicyGuidelinesScreen(onBack: () -> Unit) {
+    TODO("Not yet implemented")
 }
 
 // Shows the bottom navigation tabs.
