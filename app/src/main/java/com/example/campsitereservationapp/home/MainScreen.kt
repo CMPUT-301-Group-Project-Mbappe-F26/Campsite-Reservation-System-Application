@@ -1,6 +1,7 @@
 package com.example.campsitereservationapp.home
 
 import android.util.Log
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -57,6 +58,7 @@ import kotlinx.coroutines.ensureActive
  * @param user The current user.
  * @param onSaveProfile Saves changes to the user's profile.
  * @param onDeleteProfile Deletes the current profile and returns to Welcome.
+ * @param onSaveProfileImage Saves a selected photo, or removes it when null.
  * @param openLotteryId The lottery to open from a notification, if any.
  * @param onLotteryOpened Called after the lottery is opened.
  */
@@ -65,6 +67,7 @@ fun MainScreen(
     user: User,
     onSaveProfile: suspend (User) -> Unit,
     onDeleteProfile: suspend () -> Unit,
+    onSaveProfileImage: suspend (Uri?) -> Unit,
     openLotteryId: String? = null,
     onLotteryOpened: () -> Unit = {}
 ) {
@@ -308,6 +311,16 @@ fun MainScreen(
                     onHostClick = { hostMode = true },
                     onAdminClick = { if (user.isAdmin) adminMode = true },
                     savingNotifications = saving,
+                    onSaveImage = { uri ->
+                        check(!saving && !deletingProfile) { "Please wait for your profile to finish saving." }
+                        saving = true
+                        error = ""
+                        try {
+                            onSaveProfileImage(uri)
+                        } finally {
+                            saving = false
+                        }
+                    },
                     onNotificationsChanged = { enabled ->
                         if (!saving) {
                             saving = true

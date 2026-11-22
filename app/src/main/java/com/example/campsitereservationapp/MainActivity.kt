@@ -21,12 +21,16 @@ import com.example.campsitereservationapp.home.MainScreen
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.notification.LotteryNotificationService
 import com.example.campsitereservationapp.service.UserService
+import com.example.campsitereservationapp.service.ProfileImageService
+import com.example.campsitereservationapp.profile.prepareProfileImage
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import com.example.campsitereservationapp.ui.theme.PinedrawTheme
 import com.google.firebase.auth.FirebaseAuth
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Main activity that starts the application.
@@ -44,6 +48,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             PinedrawTheme {
                 val userService = remember { UserService() }
+                val profileImageService = remember { ProfileImageService() }
                 val notificationService = remember { LotteryNotificationService(this@MainActivity) }
                 val scope = rememberCoroutineScope()
                 var user by remember { mutableStateOf<User?>(null) }
@@ -139,6 +144,14 @@ class MainActivity : ComponentActivity() {
                             user = user!!,
                             openLotteryId = notificationLotteryId,
                             onLotteryOpened = { notificationLotteryId = null },
+                            onSaveProfileImage = { uri ->
+                                val userId = checkNotNull(user).id
+                                val jpeg = uri?.let {
+                                    withContext(Dispatchers.IO) { prepareProfileImage(this@MainActivity, it) }
+                                }
+                                val updatedUser = profileImageService.save(userId, jpeg)
+                                if (user?.id == userId) user = updatedUser
+                            },
                             onDeleteProfile = {
                                 userService.deleteProfile()
                                 notificationLotteryId = null
@@ -148,8 +161,7 @@ class MainActivity : ComponentActivity() {
                                 Toast.makeText(this@MainActivity, "Profile deleted", Toast.LENGTH_SHORT).show()
                             },
                             onSaveProfile = { updatedUser ->
-                                userService.updateUser(updatedUser) // Save to Firestore
-                                user = updatedUser
+                                user = userService.updateUser(updatedUser) // Preserve the latest saved image.
                                 Toast.makeText(
                                     this@MainActivity,
                                     "Profile updated",
