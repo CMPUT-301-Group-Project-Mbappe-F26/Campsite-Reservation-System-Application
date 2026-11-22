@@ -116,23 +116,13 @@ fun EditProfileScreen(
             Spacer(Modifier.height(20.dp))
 
             // Avatar
-            Box(
+            ProfileAvatar(
+                name = name,
+                imageUrl = user.profileImageUrl,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .size(96.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(listOf(Color(0xFF2E8C86), Color(0xFF1F5C73)))
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = name.firstOrNull()?.uppercase() ?: "P",
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = PinedrawColors.Text
-                )
-            }
+            )
 
             Spacer(Modifier.height(28.dp))
             ProfileField(

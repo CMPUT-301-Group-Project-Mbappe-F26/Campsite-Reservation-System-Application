@@ -17,6 +17,8 @@ import com.google.firebase.firestore.PropertyName
  * @property phone Optional contact phone number.
  * @property city Home city shown on the profile screen.
  * @property isOwner Whether the user has registered as a campsite owner.
+ * @property profileImageUrl Download URL of the saved profile image, or blank for the default avatar.
+ * @property profileImagePath Firebase Storage path used by profile image management and the admin image browser.
  * @property isAdmin Whether the user can open the Admin Dashboard to browse and remove campsites.
  * Stored in Firestore as `isAdmin`.
  */
@@ -30,5 +32,7 @@ data class User(
     val notificationsEnabled: Boolean = true,
     // Keeps the Firestore field name as isAdmin; Kotlin would otherwise save it as "admin" and never read it back.
     @get:PropertyName("isAdmin") @field:PropertyName("isAdmin")
-    val isAdmin: Boolean = false
+    val isAdmin: Boolean = false,
+    val profileImageUrl: String = "",
+    val profileImagePath: String = ""
 )

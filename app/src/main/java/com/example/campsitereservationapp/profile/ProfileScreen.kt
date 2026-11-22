@@ -1,11 +1,11 @@
 package com.example.campsitereservationapp.profile
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -39,7 +39,8 @@ fun ProfileScreen(
     onHostClick: () -> Unit = {},
     onAdminClick: () -> Unit = {},
     savingNotifications: Boolean = false,
-    onNotificationsChanged: (Boolean) -> Unit = {}
+    onNotificationsChanged: (Boolean) -> Unit = {},
+    onSaveImage: suspend (Uri?) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -71,24 +72,11 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .size(104.dp)
-                    .border(2.5.dp, PinedrawColors.Lime, CircleShape)
-                    .padding(5.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(listOf(Color(0xFF2E8C86), Color(0xFF1F5C73)))
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = user.name.firstOrNull()?.uppercase() ?: "P",
-                    fontSize = 38.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = PinedrawColors.Text
-                )
-            }
+            ProfileImageEditor(
+                user = user,
+                enabled = !savingNotifications,
+                onSaveImage = onSaveImage
+            )
 
             Spacer(Modifier.height(14.dp))
 
@@ -155,7 +143,7 @@ fun ProfileScreen(
         Spacer(Modifier.height(24.dp))
         SectionLabel("ACCOUNT")
         OptionGroup {
-            ProfileOption("Personal information", Icons.Default.Person, onClick = onEditClick)
+            ProfileOption("Personal information", Icons.Default.Person, enabled = !savingNotifications, onClick = onEditClick)
             OptionDivider()
             ProfileOption("Policy & guidelines", Icons.Default.Info) {}
             OptionDivider()
@@ -213,12 +201,13 @@ private fun OptionGroup(content: @Composable ColumnScope.() -> Unit) {
 private fun ProfileOption(
     title: String,
     icon: ImageVector,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .padding(horizontal = 18.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
