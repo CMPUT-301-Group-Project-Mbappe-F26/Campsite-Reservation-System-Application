@@ -1,6 +1,9 @@
 package com.example.campsitereservationapp.service
 
 import com.example.campsitereservationapp.model.Reservation
+import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.messaging.ReservationConversation
+import com.example.campsitereservationapp.messaging.messageTextError
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -9,9 +12,10 @@ import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.tasks.await
-
-internal const val MAX_MESSAGE_LENGTH = 1000
+import java.util.UUID
 
 internal data class ReservationMessage(
     val id: String,
@@ -89,25 +93,64 @@ internal class MessageService(
     }
 
     // Saves a message with the signed-in sender and the server's time.
-    suspend fun sendMessage(reservationId: String, draft: String) {
+    suspend fun sendMessage(reservationId: String, draft: String, messageId: String = UUID.randomUUID().toString()) {
         val sender = checkNotNull(auth.currentUser).uid
         val text = draft.trim()
-        require(text.isNotEmpty() && text.length <= MAX_MESSAGE_LENGTH)
+        require(messageTextError(draft) == null) { messageTextError(draft).orEmpty() }
+        require(messageId.isNotBlank() && '/' !in messageId)
         val booking = db.collection("reservations").document(reservationId)
-        val message = messages(reservationId).document()
+        val message = messages(reservationId).document(messageId)
         // A transaction fails offline instead of leaving a message queued after the chat closes.
         db.runTransaction { transaction ->
-            check(transaction.get(booking).exists()) { "Reservation is unavailable" }
-            transaction.set(message, mapOf(
-                "senderId" to sender,
-                "text" to text,
-                "sentAt" to FieldValue.serverTimestamp()
-            ))
+            check(auth.currentUser?.uid == sender) { "Please sign in again." }
+            val reservation = transaction.get(booking).toObject(Reservation::class.java)
+                ?.copy(id = booking.id) ?: error("This reservation is no longer available.")
+            val campsite = transaction.get(db.collection("campsites").document(reservation.campsiteId))
+                .toObject(Campsite::class.java) ?: error("This campsite is no longer available.")
+            val conversation = ReservationConversation(reservation, campsite.ownerId)
+            check(conversation.canRead(sender)) { "You can only message about your own reservations." }
+            val existing = transaction.get(message)
+            if (existing.exists()) {
+                // A retry after an interrupted response must not add the same message twice.
+                check(existing.getString("senderId") == sender && existing.getString("text") == text)
+            } else {
+                val problem = conversation.sendError(sender)
+                check(problem == null) { problem.orEmpty() }
+                transaction.set(message, mapOf(
+                    "senderId" to sender,
+                    "text" to text,
+                    "sentAt" to FieldValue.serverTimestamp()
+                ))
+            }
             Unit
         }.await()
     }
 
+    // Rechecks participation when a booking changes, including cancellation while chatting.
+    fun observeConversation(reservationId: String) = callbackFlow<Reservation> {
+        require(reservationId.isNotBlank() && '/' !in reservationId)
+        val listener = db.collection("reservations").document(reservationId)
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
+                if (error != null) close(error)
+                else if (snapshot != null && !snapshot.metadata.isFromCache) {
+                    val booking = snapshot.toObject(Reservation::class.java)?.copy(id = snapshot.id)
+                    if (booking == null) close(IllegalStateException("This reservation is no longer available."))
+                    else trySend(booking)
+                }
+            }
+        awaitClose { listener.remove() }
+    }.distinctUntilChanged().map { booking ->
+        val uid = checkNotNull(auth.currentUser).uid
+        val campsite = db.collection("campsites").document(booking.campsiteId).get(Source.SERVER).await()
+            .toObject(Campsite::class.java) ?: error("This campsite is no longer available.")
+        ReservationConversation(booking, campsite.ownerId).also {
+            check(auth.currentUser?.uid == uid && it.canRead(uid)) { "This conversation is not available to your account." }
+        }
+    }
+
     // Keeps each transcript under the reservation it belongs to.
-    private fun messages(reservationId: String) =
-        db.collection("reservations").document(reservationId).collection("messages")
+    private fun messages(reservationId: String): com.google.firebase.firestore.CollectionReference {
+        require(reservationId.isNotBlank() && '/' !in reservationId)
+        return db.collection("reservations").document(reservationId).collection("messages")
+    }
 }

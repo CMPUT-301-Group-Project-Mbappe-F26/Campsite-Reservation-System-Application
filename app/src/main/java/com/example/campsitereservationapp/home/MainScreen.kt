@@ -142,7 +142,7 @@ fun MainScreen(
         containerColor = PinedrawColors.Background,
         bottomBar = {
             // Hide bottom navigation when some other screen is open
-            if (!editing && !hostMode && !adminMode && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
+            if (!editing && !hostMode && !adminMode && messageReservationId == null && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
                 PinedrawNavBar(
                     tabs = listOf("Discover", "Lotteries", "Extra", "Profile"),
                     selectedTab = selectedTab,

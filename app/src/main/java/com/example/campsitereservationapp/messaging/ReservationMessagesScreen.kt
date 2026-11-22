@@ -21,15 +21,15 @@ import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
 import com.example.campsitereservationapp.model.formatReservationDate
-import com.example.campsitereservationapp.service.CampsiteService
-import com.example.campsitereservationapp.service.MAX_MESSAGE_LENGTH
 import com.example.campsitereservationapp.service.MessageService
 import com.example.campsitereservationapp.service.ReservationMessage
-import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
+import java.util.UUID
 import java.text.DateFormat
 
 // Shows the guests who booked this campsite and opens the selected reservation's chat.
@@ -84,28 +84,39 @@ internal fun CampsiteMessagesScreen(campsiteId: String, onBack: () -> Unit, onOp
 @Composable
 internal fun ReservationMessagesScreen(reservationId: String, userId: String, onBack: () -> Unit) {
     val service = remember { MessageService() }
-    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var booking by remember(reservationId, userId) { mutableStateOf<Reservation?>(null) }
     var contact by remember(reservationId, userId) { mutableStateOf("") }
     var messages by remember(reservationId, userId) { mutableStateOf<List<ReservationMessage>?>(null) }
-    var draft by rememberSaveable(reservationId, userId) { mutableStateOf("") }
-    var loadError by remember { mutableStateOf(false) }
-    var sendError by remember { mutableStateOf(false) }
-    var sending by remember { mutableStateOf(false) }
+    var ownerId by remember(reservationId, userId) { mutableStateOf("") }
+    var loadError by remember(reservationId, userId) { mutableStateOf(false) }
     var retry by remember { mutableIntStateOf(0) }
     LaunchedEffect(reservationId, userId, retry) {
         loadError = false
+        booking = null
+        messages = null
+        contact = ""
         try {
-            val reservation = checkNotNull(ReservationService().getReservation(reservationId))
-            val campsite = CampsiteService().getCampsite(reservation.campsiteId)
-            val isGuest = reservation.entrantId == userId
-            check(isGuest || campsite?.ownerId == userId)
-            val otherId = if (isGuest) campsite?.ownerId else reservation.entrantId
-            contact = UserService().getUsers(listOfNotNull(otherId)).firstOrNull()?.name.orEmpty()
-                .ifBlank { if (isGuest) "Campsite owner" else "Guest" }
-            booking = reservation
-            service.observeMessages(reservationId).collect { messages = it }
+            service.observeConversation(reservationId).collectLatest { conversation ->
+                check(conversation.canRead(userId))
+                booking = conversation.reservation
+                ownerId = conversation.ownerId
+                val isGuest = conversation.reservation.entrantId == userId
+                val otherId = if (isGuest) ownerId else conversation.reservation.entrantId
+                contact = if (isGuest) "Campsite owner" else "Guest"
+                coroutineScope {
+                    launch {
+                        try {
+                            val name = UserService().getUsers(listOf(otherId)).firstOrNull()?.name.orEmpty()
+                            if (name.isNotBlank()) contact = name
+                        } catch (_: Exception) {
+                            coroutineContext.ensureActive()
+                            // The conversation remains usable when the contact's profile is unavailable.
+                        }
+                    }
+                    service.observeMessages(reservationId).collect { messages = it }
+                }
+            }
         } catch (_: Exception) {
             coroutineContext.ensureActive()
             loadError = true
@@ -147,7 +158,7 @@ internal fun ReservationMessagesScreen(reservationId: String, userId: String, on
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) {
                     if (entries.isEmpty()) item {
-                        Text("No messages yet. Start the conversation.",
+                        Text(if (booking?.entrantId == userId) "Ask the owner about your stay." else "Send a message to your guest.",
                             Modifier.fillMaxWidth().padding(vertical = 12.dp),
                             color = PinedrawColors.TextSecondary, textAlign = TextAlign.Center)
                     }
@@ -156,39 +167,76 @@ internal fun ReservationMessagesScreen(reservationId: String, userId: String, on
                 Text("Admins can review messages for safety.", Modifier.fillMaxWidth(),
                     color = PinedrawColors.TextSecondary, style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center)
-                if (sendError) Text("Could not send your message. Try again.", color = PinedrawColors.Coral)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { if (it.length <= MAX_MESSAGE_LENGTH) draft = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message") },
-                        enabled = !sending,
-                        shape = MaterialTheme.shapes.large,
-                        maxLines = 4
-                    )
-                    FilledIconButton(
-                        enabled = !sending && draft.isNotBlank(),
-                        onClick = {
-                            if (!sending && draft.isNotBlank()) {
-                                sending = true
-                                sendError = false
-                                scope.launch {
-                                    try {
-                                        service.sendMessage(reservationId, draft)
-                                        draft = ""
-                                    } catch (_: Exception) {
-                                        coroutineContext.ensureActive()
-                                        sendError = true
-                                    } finally {
-                                        sending = false
-                                    }
-                                }
-                            }
+                ReservationMessageComposer(
+                    reservationId = reservationId,
+                    userId = userId,
+                    blockedReason = booking?.let { ReservationConversation(it, ownerId).sendError(userId) },
+                    onSend = { text, messageId -> service.sendMessage(reservationId, text, messageId) }
+                )
+            }
+        }
+    }
+}
+
+// Keeps the draft on failure and reuses its message ID if the user retries a send.
+@Composable
+internal fun ReservationMessageComposer(
+    reservationId: String,
+    userId: String,
+    blockedReason: String? = null,
+    onSend: suspend (String, String) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var draft by rememberSaveable(reservationId, userId) { mutableStateOf("") }
+    var attemptId by rememberSaveable(reservationId, userId) { mutableStateOf<String?>(null) }
+    var sending by remember(reservationId, userId) { mutableStateOf(false) }
+    var sendError by remember(reservationId, userId) { mutableStateOf("") }
+    if (blockedReason != null) Text(blockedReason, color = PinedrawColors.TextSecondary)
+    if (sendError.isNotEmpty()) Text(sendError, color = PinedrawColors.Coral)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = {
+                draft = it
+                attemptId = null
+                sendError = ""
+            },
+            modifier = Modifier.weight(1f),
+            label = { Text("Message") },
+            placeholder = { Text("Write a message…") },
+            enabled = !sending && blockedReason == null,
+            shape = MaterialTheme.shapes.large,
+            maxLines = 4,
+            isError = draft.trim().length > MAX_MESSAGE_LENGTH,
+            supportingText = {
+                if (draft.trim().length > MAX_MESSAGE_LENGTH) Text("Keep your message under 1,000 characters.")
+            }
+        )
+        FilledIconButton(
+            enabled = !sending && blockedReason == null && messageTextError(draft) == null,
+            onClick = {
+                if (!sending && blockedReason == null && messageTextError(draft) == null) {
+                    val text = draft.trim()
+                    val messageId = attemptId ?: UUID.randomUUID().toString().also { attemptId = it }
+                    sending = true
+                    sendError = ""
+                    scope.launch {
+                        try {
+                            onSend(text, messageId)
+                            draft = ""
+                            attemptId = null
+                        } catch (_: Exception) {
+                            coroutineContext.ensureActive()
+                            sendError = "Couldn't send your message. Your draft is still here—try again."
+                        } finally {
+                            sending = false
                         }
-                    ) { Icon(Icons.AutoMirrored.Filled.Send, "Send message") }
+                    }
                 }
             }
+        ) {
+            if (sending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            else Icon(Icons.AutoMirrored.Filled.Send, "Send message")
         }
     }
 }
