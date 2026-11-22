@@ -7,8 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,6 +23,22 @@ import com.example.campsitereservationapp.service.MessageService
 import com.example.campsitereservationapp.service.ReservationMessage
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.Send
+import com.example.campsitereservationapp.ui.components.CircleIconButton
+import com.example.campsitereservationapp.ui.components.EmptyState
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InitialsAvatar
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.StatusChip
+import com.example.campsitereservationapp.ui.components.pinedrawFieldColors
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
@@ -53,25 +67,26 @@ internal fun CampsiteMessagesScreen(campsiteId: String, onBack: () -> Unit, onOp
     MessagePage {
         Row(verticalAlignment = Alignment.CenterVertically) {
             MessageBack(onBack)
-            Text("Message guests", style = MaterialTheme.typography.headlineLarge)
+            Spacer(Modifier.width(12.dp))
+            Text("Message guests", style = MaterialTheme.typography.titleLarge)
         }
         val entries = guests
         when {
             error -> MessageError("Could not load guests.", onRetry = { retry++ })
             entries == null -> MessageLoading()
-            entries.isEmpty() -> Text("No reservations yet.", color = PinedrawColors.TextSecondary)
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            entries.isEmpty() -> EmptyState(Icons.AutoMirrored.Rounded.Chat, "No reservations yet.")
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)) {
                 items(entries, key = { it.first.id }) { (reservation, name) ->
-                    Card(
-                        onClick = { onOpenChat(reservation.id) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Surface)
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(name, style = MaterialTheme.typography.titleLarge)
-                            Text(stayDates(reservation), color = PinedrawColors.TextSecondary)
-                            Text("Reservation • ${reservation.status}", color = PinedrawColors.TextSecondary,
-                                style = MaterialTheme.typography.bodySmall)
+                    GlassCard(onClick = { onOpenChat(reservation.id) }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            InitialsAvatar(name, size = 44.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(name, style = MaterialTheme.typography.titleMedium)
+                                Text(stayDates(reservation), style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+                            }
+                            StatusChip(reservation.status,
+                                color = if (reservation.status == RESERVATION_CANCELLED) PinedrawColors.Coral else PinedrawColors.Lime)
                         }
                     }
                 }
@@ -129,27 +144,18 @@ internal fun ReservationMessagesScreen(reservationId: String, userId: String, on
     MessagePage {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             MessageBack(onBack)
-            if (contact.isNotBlank()) {
-                Box(
-                    Modifier.size(38.dp).clip(CircleShape).background(PinedrawColors.Teal),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(contact.take(1).uppercase(), color = PinedrawColors.Ink, style = MaterialTheme.typography.titleLarge)
-                }
-            }
-            Column {
-                Text(contact.ifBlank { "Messages" }, style = MaterialTheme.typography.titleLarge)
+            if (contact.isNotBlank()) InitialsAvatar(contact, size = 42.dp)
+            Column(Modifier.weight(1f)) {
+                Text(contact.ifBlank { "Messages" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 booking?.let {
-                    Text(it.campsiteName.ifBlank { "Campsite reservation" }, color = PinedrawColors.TextSecondary)
-                    Text(stayDates(it), color = PinedrawColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text("${it.campsiteName.ifBlank { "Campsite reservation" }} · ${stayDates(it)}",
+                        color = PinedrawColors.TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
             }
         }
         booking?.let {
             val statusColor = if (it.status == RESERVATION_CANCELLED) PinedrawColors.Coral else PinedrawColors.Lime
-            Surface(Modifier.align(Alignment.CenterHorizontally), shape = CircleShape, color = statusColor.copy(alpha = 0.12f)) {
-                Text("Reservation • ${it.status}", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), color = statusColor)
-            }
+            StatusChip("Reservation • ${it.status}", Modifier.align(Alignment.CenterHorizontally), color = statusColor)
         }
         when {
             loadError -> MessageError("Could not load this conversation.", onRetry = { retry++ })
@@ -165,7 +171,7 @@ internal fun ReservationMessagesScreen(reservationId: String, userId: String, on
                     items(entries, key = { it.id }) { message -> MessageBubble(message, message.senderId == userId) }
                 }
                 Text("Admins can review messages for safety.", Modifier.fillMaxWidth(),
-                    color = PinedrawColors.TextSecondary, style = MaterialTheme.typography.bodySmall,
+                    color = PinedrawColors.TextMuted, style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center)
                 ReservationMessageComposer(
                     reservationId = reservationId,
@@ -191,8 +197,8 @@ internal fun ReservationMessageComposer(
     var attemptId by rememberSaveable(reservationId, userId) { mutableStateOf<String?>(null) }
     var sending by remember(reservationId, userId) { mutableStateOf(false) }
     var sendError by remember(reservationId, userId) { mutableStateOf("") }
-    if (blockedReason != null) Text(blockedReason, color = PinedrawColors.TextSecondary)
-    if (sendError.isNotEmpty()) Text(sendError, color = PinedrawColors.Coral)
+    if (blockedReason != null) InlineMessage(blockedReason, color = PinedrawColors.TextSecondary)
+    InlineMessage(sendError)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
             value = draft,
@@ -205,7 +211,8 @@ internal fun ReservationMessageComposer(
             label = { Text("Message") },
             placeholder = { Text("Write a message…") },
             enabled = !sending && blockedReason == null,
-            shape = MaterialTheme.shapes.large,
+            shape = PinedrawRadius.Large,
+            colors = pinedrawFieldColors(),
             maxLines = 4,
             isError = draft.trim().length > MAX_MESSAGE_LENGTH,
             supportingText = {
@@ -213,6 +220,11 @@ internal fun ReservationMessageComposer(
             }
         )
         FilledIconButton(
+            modifier = Modifier.size(52.dp),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = PinedrawColors.Lime, contentColor = PinedrawColors.Ink,
+                disabledContainerColor = PinedrawColors.Glass, disabledContentColor = PinedrawColors.TextMuted
+            ),
             enabled = !sending && blockedReason == null && messageTextError(draft) == null,
             onClick = {
                 if (!sending && blockedReason == null && messageTextError(draft) == null) {
@@ -235,8 +247,8 @@ internal fun ReservationMessageComposer(
                 }
             }
         ) {
-            if (sending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            else Icon(Icons.AutoMirrored.Filled.Send, "Send message")
+            if (sending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = PinedrawColors.Ink)
+            else Icon(Icons.AutoMirrored.Rounded.Send, "Send message")
         }
     }
 }
@@ -245,12 +257,13 @@ internal fun ReservationMessageComposer(
 @Composable
 private fun MessageBubble(message: ReservationMessage, outgoing: Boolean) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
-        val shape = MaterialTheme.shapes.large
+        val shape = if (outgoing) RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp) else RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)
         val background = if (outgoing) PinedrawColors.PrimaryGradient
-            else Brush.horizontalGradient(listOf(PinedrawColors.Surface, PinedrawColors.Surface))
+            else Brush.horizontalGradient(listOf(PinedrawColors.SurfaceRaised, PinedrawColors.SurfaceRaised))
         Text(message.text,
-            Modifier.fillMaxWidth(0.80f).clip(shape)
+            Modifier.widthIn(max = 300.dp).clip(shape)
                 .background(background).padding(horizontal = 14.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodyLarge,
             color = if (outgoing) PinedrawColors.Ink else PinedrawColors.Text)
         message.sentAt?.let {
             Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(it.toDate()),
@@ -263,42 +276,31 @@ private fun MessageBubble(message: ReservationMessage, outgoing: Boolean) {
 // Applies the shared Pinedraw gradient and leaves space for system bars and the keyboard.
 @Composable
 private fun MessagePage(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(
-                0f to MaterialTheme.colorScheme.surfaceBright, 0.60f to PinedrawColors.Background
-            )).statusBarsPadding().navigationBarsPadding().imePadding().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        content = content
-    )
+    PinedrawBackground {
+        Column(
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().padding(PinedrawSpacing.Large),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            content = content
+        )
+    }
 }
 
 // Returns to the reservation or guest list.
 @Composable
 private fun MessageBack(onBack: () -> Unit) {
-    FilledTonalIconButton(
-        onClick = onBack,
-        colors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text
-        )
-    ) {
-        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-    }
+    CircleIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
 }
 
 // Shows a retry action when the list or conversation fails to load.
 @Composable
 private fun MessageError(text: String, onRetry: () -> Unit) {
-    Text(text, color = PinedrawColors.Coral)
-    TextButton(onClick = onRetry) { Text("Try again") }
+    ErrorState(text, onRetry = onRetry)
 }
 
 // Shows progress while the first result is loading.
 @Composable
 private fun MessageLoading() {
-    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
-    }
+    LoadingState()
 }
 
 // Uses the same check-in and check-out labels as the reservation screen.

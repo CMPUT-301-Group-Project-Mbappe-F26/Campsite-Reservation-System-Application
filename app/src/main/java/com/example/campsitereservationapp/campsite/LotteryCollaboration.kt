@@ -4,12 +4,26 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.campsitereservationapp.model.*
 import com.example.campsitereservationapp.service.*
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.Handshake
+import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.Refresh
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InfoRow
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.OverlineLabel
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.PinedrawTextButton
 
 /** Loads collaboration controls only from an owned campsite's details screen. */
 @Composable
@@ -18,10 +32,10 @@ fun LotteryCollaborationSection(campsite: Campsite, refresh: Int, onChanged: () 
     LaunchedEffect(campsite.id, refresh) { controller.load(campsite.id) }
     if (controller.loading) CircularProgressIndicator(Modifier.size(20.dp))
     if (controller.error.isNotBlank()) {
-        Text(controller.error, color = PinedrawColors.Coral)
-        TextButton(onClick = { controller.load(campsite.id) }) { Text("Refresh collaboration") }
+        InlineMessage(controller.error)
+        PinedrawTextButton("Refresh collaboration", { controller.load(campsite.id) }, icon = Icons.Rounded.Refresh)
     }
-    if (controller.message.isNotBlank()) Text(controller.message, color = PinedrawColors.Lime)
+    InlineMessage(controller.message, color = PinedrawColors.Lime)
     controller.listings.forEach { entry ->
         key(entry.lottery.id) { LotteryCollaborationCard(entry, campsite, controller.candidates, controller.saving || controller.loading,
             onLoadCandidates = controller::loadCandidates,
@@ -58,68 +72,84 @@ internal fun LotteryCollaborationCard(
     var candidateId by remember { mutableStateOf<String?>(null) }
     var confirmation by remember { mutableStateOf<CollaborationConfirmation?>(null) }
     val available = candidates.filter { it.ownerId != ownedCampsite.ownerId && it.id !in lottery.offeredCampsiteIds() && it.id !in lottery.campsiteInvitations }
-    Card(Modifier.fillMaxWidth().testTag("lottery-collaboration-${lottery.id}"),
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text),
-        shape = MaterialTheme.shapes.large) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(if (invited) "Shared lottery invitation" else "Lottery collaboration", style = MaterialTheme.typography.titleLarge)
-            Text(if (coordinator) "You coordinate this lottery." else "You manage only ${ownedCampsite.name}.", color = PinedrawColors.TextSecondary)
-            Text("Registration: ${lottery.registrationStartDate} – ${lottery.registrationEndDate}")
-            Text("Booking: ${lottery.bookingStartDate} – ${lottery.bookingEndDate}")
-            Text("Stay: ${lottery.stayStartDate} – ${lottery.stayEndDate} (checkout)")
-            Text("Winners: ${lottery.numberOfWinners}")
-            Text("Accepted campsites", style = MaterialTheme.typography.labelLarge)
-            lottery.offeredCampsiteIds().forEach { id ->
-                Text(entry.campsites.find { it.id == id }?.name ?: "Unavailable campsite", color = PinedrawColors.TextSecondary)
-            }
-            if (!editable) Text("The lottery has been drawn or booked. Membership can no longer change.", color = PinedrawColors.TextSecondary)
-            if (invited) {
-                Text("Your campsite is not listed until you accept these dates and the winner limit.", color = PinedrawColors.TextSecondary)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = editable && !saving, onClick = { confirmation = CollaborationConfirmation(ownedCampsite.id, LotteryCollaborationAction.ACCEPT) }) { Text("Accept invitation") }
-                    TextButton(enabled = editable && !saving, onClick = { confirmation = CollaborationConfirmation(ownedCampsite.id, LotteryCollaborationAction.DECLINE) }) { Text("Decline") }
-                }
-            }
-            if (accepted && ownedCampsite.id != lottery.campsiteId) {
-                OutlinedButton(enabled = editable && !saving, onClick = { confirmation = CollaborationConfirmation(ownedCampsite.id, LotteryCollaborationAction.WITHDRAW) }) {
-                    Text("Withdraw my campsite")
-                }
-            }
-            if (coordinator) {
-                lottery.campsiteInvitations.forEach { (id, _) ->
-                    Text("Pending: ${entry.campsites.find { it.id == id }?.name ?: "Unavailable campsite"}")
-                    TextButton(enabled = editable && !saving, onClick = { confirmation = CollaborationConfirmation(id, LotteryCollaborationAction.DECLINE) }) { Text("Cancel invitation") }
-                }
-                OutlinedButton(enabled = editable && !saving && lottery.offeredCampsiteIds().size + lottery.campsiteInvitations.size < MAX_LOTTERY_CAMPSITES,
-                    onClick = { inviting = true; candidateId = null; onLoadCandidates() }) { Text("Invite another owner's campsite") }
+    GlassCard(modifier = Modifier.testTag("lottery-collaboration-${lottery.id}"), spacing = 10.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Handshake, null, tint = PinedrawColors.Lime, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (invited) "Shared lottery invitation" else "Lottery collaboration", style = MaterialTheme.typography.titleMedium)
+        }
+        Text(if (coordinator) "You coordinate this lottery." else "You manage only ${ownedCampsite.name}.",
+            style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+        InfoRow("Registration", "${lottery.registrationStartDate} – ${lottery.registrationEndDate}")
+        InfoRow("Booking", "${lottery.bookingStartDate} – ${lottery.bookingEndDate}")
+        InfoRow("Stay", "${lottery.stayStartDate} – ${lottery.stayEndDate} (checkout)")
+        InfoRow("Winners", "${lottery.numberOfWinners}")
+        OverlineLabel("Accepted campsites")
+        lottery.offeredCampsiteIds().forEach { id ->
+            Text(entry.campsites.find { it.id == id }?.name ?: "Unavailable campsite", style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.Text)
+        }
+        if (!editable) InlineMessage("The lottery has been drawn or booked. Membership can no longer change.", color = PinedrawColors.TextSecondary)
+        if (invited) {
+            Text("Your campsite is not listed until you accept these dates and the winner limit.", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PinedrawButton("Accept invitation", { confirmation = CollaborationConfirmation(ownedCampsite.id, LotteryCollaborationAction.ACCEPT) },
+                    Modifier.weight(1f), enabled = editable && !saving, compact = true)
+                PinedrawButton("Decline", { confirmation = CollaborationConfirmation(ownedCampsite.id, LotteryCollaborationAction.DECLINE) },
+                    style = ButtonStyle.Ghost, enabled = editable && !saving, compact = true)
             }
         }
+        if (accepted && ownedCampsite.id != lottery.campsiteId) {
+            PinedrawButton("Withdraw my campsite", { confirmation = CollaborationConfirmation(ownedCampsite.id, LotteryCollaborationAction.WITHDRAW) },
+                Modifier.fillMaxWidth(), style = ButtonStyle.SoftDestructive, enabled = editable && !saving, compact = true)
+        }
+        if (coordinator) {
+            lottery.campsiteInvitations.forEach { (id, _) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Pending: ${entry.campsites.find { it.id == id }?.name ?: "Unavailable campsite"}", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    PinedrawTextButton("Cancel invitation", { confirmation = CollaborationConfirmation(id, LotteryCollaborationAction.DECLINE) },
+                        color = PinedrawColors.Coral, enabled = editable && !saving)
+                }
+            }
+            PinedrawButton("Invite another owner's campsite", { inviting = true; candidateId = null; onLoadCandidates() },
+                Modifier.fillMaxWidth(), style = ButtonStyle.Ghost, icon = Icons.Rounded.PersonAdd, compact = true,
+                enabled = editable && !saving && lottery.offeredCampsiteIds().size + lottery.campsiteInvitations.size < MAX_LOTTERY_CAMPSITES)
+        }
     }
-    if (inviting) AlertDialog(onDismissRequest = { inviting = false }, title = { Text("Invite a campsite") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Its owner must accept before the campsite is listed.")
+    if (inviting) PinedrawDialog(
+        title = "Invite a campsite",
+        message = "Its owner must accept before the campsite is listed.",
+        icon = Icons.Rounded.PersonAdd,
+        confirmText = "Send invitation",
+        confirmEnabled = available.any { it.id == candidateId } && !saving,
+        onDismiss = { inviting = false },
+        onConfirm = {
+            inviting = false
+            onAction(requireNotNull(candidateId), LotteryCollaborationAction.INVITE)
+        }
+    ) {
             Box {
-                OutlinedButton(onClick = { choosing = true }) { Text(available.find { it.id == candidateId }?.name ?: "Choose a campsite") }
+                PinedrawButton(available.find { it.id == candidateId }?.name ?: "Choose a campsite", { choosing = true },
+                    Modifier.fillMaxWidth(), style = ButtonStyle.Ghost, icon = Icons.Rounded.Cabin, compact = true)
                 DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
                     available.forEach { site -> DropdownMenuItem(text = { Text("${site.name} · ${site.location}") }, onClick = { candidateId = site.id; choosing = false }) }
                 }
             }
-            if (loadingCandidates) CircularProgressIndicator(Modifier.size(20.dp))
-            else if (available.isEmpty()) Text("No other published campsites are available to invite yet.")
-        } },
-        dismissButton = { TextButton(onClick = { inviting = false }) { Text("Cancel") } },
-        confirmButton = { TextButton(enabled = available.any { it.id == candidateId } && !saving, onClick = {
-            inviting = false
-            onAction(requireNotNull(candidateId), LotteryCollaborationAction.INVITE)
-        }) { Text("Send invitation") } })
+            if (loadingCandidates) CircularProgressIndicator(Modifier.size(20.dp), color = PinedrawColors.Lime)
+            else if (available.isEmpty()) Text("No other published campsites are available to invite yet.", style = MaterialTheme.typography.bodySmall)
+    }
     confirmation?.let { pending ->
-        AlertDialog(onDismissRequest = { confirmation = null }, title = { Text("Are you sure?") },
-            text = { Text(when (pending.action) {
+        PinedrawDialog(
+            title = "Are you sure?",
+            message = when (pending.action) {
                 LotteryCollaborationAction.ACCEPT -> "Accept the displayed dates and winner limit, and add your campsite?"
                 LotteryCollaborationAction.WITHDRAW -> "Withdraw only your campsite? Remaining capacity may reduce the winner limit. Entrants will be notified."
                 else -> "Remove this pending invitation? No campsite will be added."
-            }) },
-            dismissButton = { TextButton(onClick = { confirmation = null }) { Text("Cancel") } },
-            confirmButton = { TextButton(enabled = !saving, onClick = { confirmation = null; onAction(pending.campsiteId, pending.action) }) { Text("Proceed") } })
+            },
+            icon = Icons.Rounded.Handshake,
+            confirmText = "Proceed",
+            confirmEnabled = !saving,
+            onDismiss = { confirmation = null },
+            onConfirm = { confirmation = null; onAction(pending.campsiteId, pending.action) }
+        )
     }
 }

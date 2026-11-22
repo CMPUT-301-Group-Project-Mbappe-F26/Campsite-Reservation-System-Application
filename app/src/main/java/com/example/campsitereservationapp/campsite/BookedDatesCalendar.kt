@@ -5,8 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,6 +23,8 @@ import com.example.campsitereservationapp.model.formatReservationDate
 import com.example.campsitereservationapp.model.reservationDateFromUtcMillis
 import com.example.campsitereservationapp.model.reservationDateToUtcMillis
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.foundation.shape.CircleShape
+import com.example.campsitereservationapp.ui.components.GlassCard
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -125,19 +127,16 @@ fun BookedDatesCalendar(booked: Map<String, String>, today: String) {
     val cells = calendarMonthCells(month)
     val bookedThisMonth = booked.keys.count { it.startsWith(month) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth().testTag("bookedDates"), shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Booked dates", style = MaterialTheme.typography.titleLarge)
+    GlassCard(modifier = Modifier.testTag("bookedDates")) {
+        run {
+            Text("Booked dates", style = MaterialTheme.typography.titleMedium)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { month = shiftCalendarMonth(month, -1); selected = null }) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous month")
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous month")
                 }
                 Text(formatCalendarMonth(month), Modifier.weight(1f), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
                 IconButton(onClick = { month = shiftCalendarMonth(month, 1); selected = null }) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next month")
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next month")
                 }
             }
             Row(Modifier.fillMaxWidth()) {
@@ -151,7 +150,7 @@ fun BookedDatesCalendar(booked: Map<String, String>, today: String) {
                     (week + List(7 - week.size) { null }).forEach { date ->
                         val isBooked = date != null && date in booked
                         Box(
-                            Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(8.dp))
+                            Modifier.weight(1f).aspectRatio(1f).clip(CircleShape)
                                 .background(
                                     when {
                                         date == selected -> PinedrawColors.Lime
@@ -184,6 +183,7 @@ fun BookedDatesCalendar(booked: Map<String, String>, today: String) {
                         1 -> "1 night booked this month. Tap it to see who is staying."
                         else -> "$bookedThisMonth nights booked this month. Tap one to see who is staying."
                     },
+                style = MaterialTheme.typography.bodyMedium,
                 color = PinedrawColors.TextSecondary
             )
         }

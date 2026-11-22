@@ -9,24 +9,28 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cabin
+import androidx.compose.material.icons.outlined.ConfirmationNumber
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.ConfirmationNumber
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.QrCodeScanner
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.example.campsitereservationapp.ui.theme.PinedrawDimens
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.campsitereservationapp.admin.AdminCampsitesScreen
 import com.example.campsitereservationapp.admin.AdminDashboardScreen
@@ -52,7 +56,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import com.example.campsitereservationapp.profile.PolicyGuidelinesScreen
 
-// Handles the main tabs, host screen and admin screen navigation.
 /**
  * Shows the main screens and handles navigation between them.
  *
@@ -95,6 +98,7 @@ fun MainScreen(
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val scanCampsite = rememberCampsiteScanner(onCampsiteFound = { entrantCampsiteId = it })
     LaunchedEffect(openLotteryId) {
         if (!openLotteryId.isNullOrBlank()) {
             reserveLotteryId = openLotteryId
@@ -144,9 +148,9 @@ fun MainScreen(
             // Hide bottom navigation when some other screen is open
             if (!editing && !hostMode && !adminMode && messageReservationId == null && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
                 PinedrawNavBar(
-                    tabs = listOf("Discover", "Lotteries", "Extra", "Profile"),
                     selectedTab = selectedTab,
-                    onTabSelected = { selectedTab = it }
+                    onTabSelected = { selectedTab = it },
+                    onScanClick = scanCampsite
                 )
             }
         }
@@ -355,6 +359,10 @@ fun MainScreen(
             }
 
             if (error.isNotEmpty()) {
+                LaunchedEffect(error) {
+                    kotlinx.coroutines.delay(4000)
+                    error = ""
+                }
                 Snackbar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -370,107 +378,81 @@ fun MainScreen(
     }
 }
 
-@Composable
-fun PolicyGuidelinesScreen(onBack: () -> Unit) {
-    TODO("Not yet implemented")
-}
+private data class NavTab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector)
 
-// Shows the bottom navigation tabs.
+private val navTabs = listOf(
+    NavTab("Discover", Icons.Outlined.Home, Icons.Rounded.Home),
+    NavTab("Lotteries", Icons.Outlined.ConfirmationNumber, Icons.Rounded.ConfirmationNumber),
+    NavTab("Trips", Icons.Outlined.Cabin, Icons.Rounded.Cabin),
+    NavTab("Profile", Icons.Outlined.Person, Icons.Rounded.Person)
+)
+
+// Floating bottom dock: two tabs on each side of a round QR scan button.
 @Composable
 private fun PinedrawNavBar(
-    tabs: List<String>,
     selectedTab: Int,
-    onTabSelected: (Int) -> Unit
+    onTabSelected: (Int) -> Unit,
+    onScanClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(PinedrawColors.Background)
             .navigationBarsPadding()
-            .padding(horizontal = PinedrawSpacing.Large, vertical = 10.dp)
+            .padding(horizontal = PinedrawSpacing.Large, vertical = PinedrawSpacing.Small)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(CircleShape)
+                .height(PinedrawDimens.NavBarHeight)
+                .clip(PinedrawRadius.Pill)
                 .background(PinedrawColors.Surface)
-                .border(1.dp, Color.White.copy(alpha = 0.06f), CircleShape)
-                .padding(6.dp),
+                .border(PinedrawDimens.BorderWidth, PinedrawColors.Border, PinedrawRadius.Pill)
+                .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val icons = listOf(Icons.Default.Search, Icons.Default.Star, Icons.Default.MoreVert, Icons.Default.Person)
-            tabs.forEachIndexed { index, title ->
-                val selected = selectedTab == index
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp)
-                        .clip(CircleShape)
-                        .then(
-                            if (selected) Modifier.background(PinedrawColors.PrimaryGradient)
-                            else Modifier
-                        )
-                        .clickable { onTabSelected(index) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            icons[index], contentDescription = null, modifier = Modifier.size(20.dp),
-                            tint = if (selected) PinedrawColors.Ink else PinedrawColors.TextSecondary
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = title,
-                            color = if (selected) PinedrawColors.Ink else PinedrawColors.TextSecondary,
-                            fontSize = 11.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                            maxLines = 1
-                        )
+            navTabs.forEachIndexed { index, tab ->
+                if (index == 2) {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier
+                                .size(54.dp)
+                                .clip(CircleShape)
+                                .background(PinedrawColors.PrimaryGradient)
+                                .clickable(onClick = onScanClick),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.QrCodeScanner, contentDescription = "Scan QR code", tint = PinedrawColors.Ink)
+                        }
                     }
                 }
+                val selected = selectedTab == index
+                val color = if (selected) PinedrawColors.Lime else PinedrawColors.TextMuted
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(PinedrawRadius.Large)
+                        .clickable { onTabSelected(index) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        if (selected) tab.selectedIcon else tab.icon,
+                        contentDescription = null,
+                        tint = color,
+                        modifier = Modifier.size(PinedrawDimens.IconSize)
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = tab.label,
+                        color = color,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
             }
-        }
-    }
-}
-
-// Shows a message for a tab that is not ready yet.
-@Composable
-private fun EmptyTab(title: String, message: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    0f to Color(0xFF1E3A26),
-                    0.45f to PinedrawColors.Background,
-                    1f to PinedrawColors.Background
-                )
-            )
-            .statusBarsPadding()
-            .padding(PinedrawSpacing.Screen),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.large)
-                .background(PinedrawColors.Glass)
-                .border(1.dp, Color.White.copy(alpha = 0.06f), MaterialTheme.shapes.large)
-                .padding(horizontal = PinedrawSpacing.Screen, vertical = PinedrawSpacing.Section),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineLarge,
-                color = PinedrawColors.Lime
-            )
-            Spacer(Modifier.height(PinedrawSpacing.Small))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyLarge,
-                color = PinedrawColors.TextSecondary,
-                textAlign = TextAlign.Center
-            )
         }
     }
 }

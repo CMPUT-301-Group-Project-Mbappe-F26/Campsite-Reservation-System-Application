@@ -31,6 +31,11 @@ import androidx.compose.ui.unit.sp
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.service.MAX_PROFILE_IMAGE_BYTES
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PhotoCamera
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawTextButton
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -70,27 +75,33 @@ internal fun ProfileImageEditor(
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        ProfileAvatar(
-            name = user.name,
-            imageUrl = if (removing) "" else user.profileImageUrl,
-            localUri = selectedUri,
-            modifier = Modifier.size(104.dp)
-                .border(2.5.dp, PinedrawColors.Lime, CircleShape).padding(5.dp)
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(
-                enabled = !busy,
-                onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-            ) {
-                Text(if (user.profileImageUrl.isBlank() && selectedUri == null) "Add photo" else "Change photo")
-            }
+        Box {
+            ProfileAvatar(
+                name = user.name,
+                imageUrl = if (removing) "" else user.profileImageUrl,
+                localUri = selectedUri,
+                modifier = Modifier.size(112.dp)
+                    .border(2.5.dp, PinedrawColors.Lime, CircleShape).padding(5.dp)
+            )
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(34.dp).clip(CircleShape)
+                    .background(PinedrawColors.Lime).border(3.dp, PinedrawColors.Background, CircleShape),
+                contentAlignment = Alignment.Center
+            ) { Icon(Icons.Rounded.PhotoCamera, null, tint = PinedrawColors.Ink, modifier = Modifier.size(16.dp)) }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            PinedrawTextButton(
+                if (user.profileImageUrl.isBlank() && selectedUri == null) "Add photo" else "Change photo",
+                onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                enabled = !busy
+            )
             if (!removing && (user.profileImageUrl.isNotBlank() || user.profileImagePath.isNotBlank() || selectedUri != null)) {
-                TextButton(enabled = !busy, onClick = {
+                PinedrawTextButton("Remove photo", onClick = {
                     selectedUri = null
                     removing = user.profileImageUrl.isNotBlank() || user.profileImagePath.isNotBlank()
                     error = ""
-                }) { Text("Remove photo", color = PinedrawColors.Coral) }
+                }, color = PinedrawColors.Coral, enabled = !busy)
             }
         }
         if (changed) {
@@ -100,13 +111,14 @@ internal fun ProfileImageEditor(
                 color = PinedrawColors.TextSecondary,
                 textAlign = TextAlign.Center
             )
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(enabled = !busy, onClick = {
+                PinedrawButton("Cancel", style = ButtonStyle.Ghost, compact = true, enabled = !busy, onClick = {
                     selectedUri = null
                     removing = false
                     error = ""
-                }) { Text("Cancel") }
-                Button(enabled = !busy, onClick = {
+                })
+                PinedrawButton(if (saving) "Saving photo..." else "Save photo", compact = true, loading = saving, enabled = !busy, onClick = {
                     val image = selectedUri?.let(Uri::parse)
                     saving = true
                     error = ""
@@ -122,13 +134,7 @@ internal fun ProfileImageEditor(
                             saving = false
                         }
                     }
-                }) {
-                    if (saving) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(if (saving) "Saving photo..." else "Save photo")
-                }
+                })
             }
         }
         if (error.isNotBlank()) Text(error, color = PinedrawColors.Coral, textAlign = TextAlign.Center)

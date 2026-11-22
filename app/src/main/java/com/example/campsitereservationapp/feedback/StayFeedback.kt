@@ -17,6 +17,14 @@ import com.example.campsitereservationapp.model.Reservation
 import com.example.campsitereservationapp.model.ratingError
 import com.example.campsitereservationapp.model.reviewError
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.RateReview
+import androidx.compose.material.icons.rounded.StarOutline
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.PinedrawTextField
 import kotlinx.coroutines.launch
 
 /*
@@ -67,10 +75,10 @@ fun StayFeedbackActions(
     val stars = feedback.stars[stay.id]
 
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-        if (stars == null) OutlinedButton(onClick = { rating = true }) { Text("Rate") }
-        else Text("Your rating: ${getRatingStars(stars.toDouble())}", color = StarColor)
-        if (stay.id !in feedback.reviewed) OutlinedButton(onClick = { reviewing = true }) { Text("Write review") }
-        else Text("Review posted", color = PinedrawColors.TextSecondary)
+        if (stars == null) PinedrawButton("Rate", { rating = true }, style = ButtonStyle.Ghost, icon = Icons.Rounded.StarOutline, compact = true)
+        else Text("Your rating: ${getRatingStars(stars.toDouble())}", style = MaterialTheme.typography.bodyMedium, color = StarColor)
+        if (stay.id !in feedback.reviewed) PinedrawButton("Write review", { reviewing = true }, style = ButtonStyle.Ghost, icon = Icons.Rounded.RateReview, compact = true)
+        else Text("Review posted", style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
     }
 
     if (rating) RatingDialog(name, onSubmit = { onRate(stay, it) }, onClose = { rating = false })
@@ -113,11 +121,11 @@ private fun ReviewDialog(campsiteName: String, onSubmit: suspend (String) -> Str
         title = "Review $campsiteName", canSubmit = reviewError(text) == null,
         onSubmit = { onSubmit(text) }, onClose = onClose
     ) { saving ->
-        OutlinedTextField(
+        PinedrawTextField(
             value = text, onValueChange = { text = it }, enabled = !saving,
-            label = { Text("Your review") }, modifier = Modifier.fillMaxWidth(),
+            label = "Your review", singleLine = false,
             minLines = 3, maxLines = 8, isError = text.trim().length > REVIEW_MAX_LENGTH,
-            supportingText = { Text("${text.trim().length} / $REVIEW_MAX_LENGTH. Your name and the date will be shown.") }
+            supportingText = "${text.trim().length} / $REVIEW_MAX_LENGTH. Your name and the date will be shown."
         )
     }
 }
@@ -135,28 +143,24 @@ private fun FeedbackDialog(
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = { if (!saving) onClose() },
-        title = { Text(title) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                content(saving)
-                if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
+    PinedrawDialog(
+        title = title,
+        icon = Icons.Rounded.RateReview,
+        iconTint = StarColor,
+        confirmText = if (saving) "Submitting…" else "Submit",
+        confirmEnabled = canSubmit && !saving,
+        loading = saving,
+        onDismiss = onClose,
+        onConfirm = {
+            saving = true
+            error = ""
+            scope.launch {
+                val problem = try { onSubmit() } finally { saving = false }
+                if (problem == null) onClose() else error = problem
             }
-        },
-        dismissButton = { TextButton(onClick = onClose, enabled = !saving) { Text("Cancel") } },
-        confirmButton = {
-            TextButton(
-                enabled = canSubmit && !saving,
-                onClick = {
-                    saving = true
-                    error = ""
-                    scope.launch {
-                        val problem = try { onSubmit() } finally { saving = false }
-                        if (problem == null) onClose() else error = problem
-                    }
-                }
-            ) { Text(if (saving) "Submitting…" else "Submit") }
         }
-    )
+    ) {
+        content(saving)
+        InlineMessage(error)
+    }
 }

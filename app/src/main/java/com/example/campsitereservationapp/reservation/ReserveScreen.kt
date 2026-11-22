@@ -12,9 +12,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.ui.text.style.TextAlign
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.CircleIconButton
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InfoRow
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawTextButton
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -70,27 +84,20 @@ fun ReserveScreen(lotteryId: String, onBack: () -> Unit, onReserved: () -> Unit)
     val controller: ReserveViewModel = viewModel(key = "reserve-$lotteryId-$entrantId")
     LaunchedEffect(lotteryId, entrantId) { controller.load(lotteryId) }
 
-    Column(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
-            .statusBarsPadding().navigationBarsPadding()
-    ) {
+    PinedrawBackground {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         val selection = controller.selection
         when {
-            controller.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PinedrawColors.Lime)
-            }
+            controller.loading -> LoadingState(Modifier.fillMaxSize())
             selection == null -> Column {
                 ReserveBackButton(onBack)
-                Column(Modifier.padding(24.dp)) {
-                    Text(controller.error, color = PinedrawColors.Coral)
-                    TextButton(onClick = { controller.load(lotteryId) }) { Text("Try again") }
-                }
+                ErrorState(controller.error, onRetry = { controller.load(lotteryId) })
             }
             else -> LotteryReservationFlow(selection, controller::reserve, controller::decline,
                 onBack, onReserved, onRefresh = { controller.load(lotteryId) },
                 groupSize = selection.lottery.registeredGroupSizes[entrantId] ?: 1)
         }
+    }
     }
 }
 
@@ -175,38 +182,47 @@ internal fun ColumnScope.ReserveFlow(
 
     if (!confirming) {
         ReserveBackButton(onBack, backLabel)
-        Text(campsite.name.ifBlank { "Unnamed campsite" }, Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(8.dp))
-        Text("Pick your dates. Dates that are greyed out are not available.", Modifier.padding(horizontal = 20.dp), color = PinedrawColors.TextSecondary)
+        Column(Modifier.padding(horizontal = PinedrawSpacing.Gutter), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            StepLabel("Step 1 of 2 · Dates")
+            Text(campsite.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
+            Text("Pick your dates. Dates that are greyed out are not available.", style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+        }
         DateRangePicker(
-            state = picker, modifier = Modifier.weight(1f), title = null, showModeToggle = false,
-            colors = DatePickerDefaults.colors(containerColor = Color.Transparent)
+            state = picker, modifier = Modifier.weight(1f), title = null, headline = null, showModeToggle = false,
+            colors = pinedrawDatePickerColors()
         )
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (nights.isNotEmpty() && !datesOpen) Text("Some of these dates are not available. Please choose others.", color = PinedrawColors.Coral)
-            Button(
+        Column(
+            Modifier.background(PinedrawColors.Surface).padding(horizontal = PinedrawSpacing.Gutter, vertical = PinedrawSpacing.Medium),
+            verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)
+        ) {
+            if (nights.isNotEmpty() && !datesOpen) InlineMessage("Some of these dates are not available. Please choose others.")
+            if (nights.isNotEmpty() && datesOpen) Text(
+                "${formatReservationDate(checkIn.orEmpty())} → ${formatReservationDate(checkOut.orEmpty())} · ${nights.size} ${if (nights.size == 1) "night" else "nights"}",
+                style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary
+            )
+            PinedrawButton(
+                "Continue",
                 onClick = {
                     error = ""
                     confirming = true
                 },
-                enabled = datesOpen && !saving, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
-            ) { Text("Continue", fontWeight = FontWeight.Bold) }
-            if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
+                enabled = datesOpen && !saving, modifier = Modifier.fillMaxWidth()
+            )
+            InlineMessage(error)
             DeclineSpotAction(onDecline, onDeclined, enabled = !saving, onBusyChanged = { saving = it })
         }
         return
     }
 
-    TextButton(onClick = { confirming = false }, enabled = !saving, modifier = Modifier.padding(horizontal = 12.dp)) {
-        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Change dates")
-    }
+    ReserveBackButton({ confirming = false }, "Change dates", enabled = !saving)
     Column(
-        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = PinedrawSpacing.Gutter),
+        verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Gutter)
     ) {
-        Text("Review & confirm", style = MaterialTheme.typography.headlineLarge)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            StepLabel("Step 2 of 2 · Confirm")
+            Text("Review & confirm", style = MaterialTheme.typography.headlineLarge)
+        }
         ReserveCard {
             Text(campsite.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.titleLarge)
             ReserveRow("Check-in", formatReservationDate(checkIn.orEmpty()))
@@ -215,20 +231,25 @@ internal fun ColumnScope.ReserveFlow(
             ReserveRow("Total", String.format(Locale.CANADA, "$%.2f CAD", campsite.pricePerNight * nights.size))
         }
         ReserveCard {
-            Text("Campsite rules & policies", style = MaterialTheme.typography.titleLarge)
-            Text(campsite.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
+            Text("Campsite rules & policies", style = MaterialTheme.typography.titleMedium)
+            Text(campsite.rules.ifBlank { "No additional rules provided." }, style = MaterialTheme.typography.bodyLarge, color = PinedrawColors.TextSecondary)
             ReserveRow("Cancellation policy", campsite.cancellationPolicy.ifBlank { "Not specified" })
             if (campsite.requireRulesAcceptance) Row(
                 Modifier.fillMaxWidth().clickable(enabled = !saving) { rulesAccepted = !rulesAccepted },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Checkbox(checked = rulesAccepted, onCheckedChange = null, enabled = !saving)
+                Checkbox(
+                    checked = rulesAccepted, onCheckedChange = null, enabled = !saving,
+                    colors = CheckboxDefaults.colors(checkedColor = PinedrawColors.Lime, checkmarkColor = PinedrawColors.Ink, uncheckedColor = PinedrawColors.TextSecondary)
+                )
                 Spacer(Modifier.width(12.dp))
-                Text("I've read and agree to the campsite rules and cancellation policy.")
+                Text("I've read and agree to the campsite rules and cancellation policy.", style = MaterialTheme.typography.bodyMedium)
             }
         }
-        if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
-        Button(
+        InlineMessage(error)
+        PinedrawButton(
+            if (saving) "Reserving..." else "Reserve",
+            icon = Icons.Rounded.Check,
             onClick = {
                 saving = true
                 error = ""
@@ -251,8 +272,9 @@ internal fun ColumnScope.ReserveFlow(
                 }
             },
             enabled = !saving && (rulesAccepted || !campsite.requireRulesAcceptance),
-            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
-        ) { Text(if (saving) "Reserving..." else "Reserve", fontWeight = FontWeight.Bold) }
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(PinedrawSpacing.Large))
     }
 }
 
@@ -279,91 +301,98 @@ internal fun ColumnScope.ReservationConfirmation(
         }
     }
     BackHandler(onBack = onDone)
-    IconButton(onClick = onDone, modifier = Modifier.padding(12.dp)) {
-        Icon(Icons.Default.Close, contentDescription = "Close")
+    Row(Modifier.fillMaxWidth().padding(PinedrawSpacing.Large), horizontalArrangement = Arrangement.End) {
+        CircleIconButton(Icons.Rounded.Close, "Close", onDone)
     }
     Column(
-        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = PinedrawSpacing.Screen),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Box(
-            Modifier.size(76.dp).background(PinedrawColors.Lime, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.Check, contentDescription = null, tint = PinedrawColors.Background,
-                modifier = Modifier.size(42.dp))
-        }
-        Text("You’re going camping!", style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold)
-        Text("Your reservation is confirmed.", color = PinedrawColors.TextSecondary)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFFF1F5EE),
-                contentColor = PinedrawColors.Background
-            )
-        ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(campsite.name.ifBlank { "Unnamed campsite" },
-                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                if (campsite.location.isNotBlank()) Text(campsite.location,
-                    color = PinedrawColors.Background.copy(alpha = 0.7f))
-                HorizontalDivider(color = PinedrawColors.Background.copy(alpha = 0.15f))
-                ReserveRow("Guests", if (groupSize == 1) "1 guest" else "$groupSize guests")
-                ReserveRow("Check-in", formatReservationDate(checkIn))
-                ReserveRow("Check-out", formatReservationDate(checkOut))
-                ReserveRow("Total paid", String.format(Locale.CANADA, "$%.2f CAD", total))
+        Box(Modifier.size(96.dp).background(PinedrawColors.Lime.copy(alpha = 0.16f), CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(70.dp).background(PinedrawColors.PrimaryGradient, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Check, contentDescription = null, tint = PinedrawColors.Ink, modifier = Modifier.size(40.dp))
             }
         }
-        OutlinedButton(
+        Text("You’re going camping!", style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
+        Text("Your reservation is confirmed.", style = MaterialTheme.typography.bodyLarge, color = PinedrawColors.TextSecondary)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = PinedrawRadius.Large,
+            colors = CardDefaults.cardColors(containerColor = PinedrawColors.Text, contentColor = PinedrawColors.Ink)
+        ) {
+            Column(Modifier.padding(PinedrawSpacing.Gutter), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(campsite.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.titleLarge)
+                if (campsite.location.isNotBlank()) Text(campsite.location, style = MaterialTheme.typography.bodyMedium,
+                    color = PinedrawColors.Ink.copy(alpha = 0.65f))
+                HorizontalDivider(color = PinedrawColors.Ink.copy(alpha = 0.12f))
+                ReceiptRow("Guests", if (groupSize == 1) "1 guest" else "$groupSize guests")
+                ReceiptRow("Check-in", formatReservationDate(checkIn))
+                ReceiptRow("Check-out", formatReservationDate(checkOut))
+                ReceiptRow("Total paid", String.format(Locale.CANADA, "$%.2f CAD", total))
+            }
+        }
+        PinedrawButton(
+            "Download CSV",
             onClick = {
                 if (onDownloadCsv != null) onDownloadCsv(csv)
                 else fileLauncher.launch("reservation.csv")
             },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
-            shape = MaterialTheme.shapes.large
-        ) {
-            Text("Download CSV", fontWeight = FontWeight.Bold)
-        }
-        Button(
-            onClick = onDone,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
-            shape = MaterialTheme.shapes.large
-        ) {
-            Text("View my trip", fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(12.dp))
+            modifier = Modifier.fillMaxWidth(),
+            style = ButtonStyle.Ghost,
+            icon = Icons.Rounded.Download
+        )
+        PinedrawButton("View my trip", onDone, Modifier.fillMaxWidth())
+        Spacer(Modifier.height(PinedrawSpacing.Medium))
     }
 }
 
 // Returns to the screen the winner came from.
 @Composable
-private fun ReserveBackButton(onBack: () -> Unit, label: String = "Back") {
-    TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) {
-        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(label)
-    }
+internal fun ReserveBackButton(onBack: () -> Unit, label: String = "Back", enabled: Boolean = true) {
+    PinedrawTextButton(
+        label, onBack,
+        modifier = Modifier.padding(horizontal = PinedrawSpacing.Small, vertical = PinedrawSpacing.XSmall),
+        color = PinedrawColors.Text,
+        icon = Icons.AutoMirrored.Rounded.ArrowBack,
+        enabled = enabled
+    )
 }
 
-// Groups reservation review details inside a rounded card.
 @Composable
-private fun ReserveCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
-    }
+internal fun StepLabel(text: String) {
+    Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = PinedrawColors.Lime)
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun pinedrawDatePickerColors() = DatePickerDefaults.colors(
+    containerColor = Color.Transparent,
+    weekdayContentColor = PinedrawColors.TextMuted,
+    subheadContentColor = PinedrawColors.TextSecondary,
+    dayContentColor = PinedrawColors.Text,
+    disabledDayContentColor = PinedrawColors.TextMuted.copy(alpha = 0.45f),
+    selectedDayContainerColor = PinedrawColors.Lime,
+    selectedDayContentColor = PinedrawColors.Ink,
+    todayContentColor = PinedrawColors.Lime,
+    todayDateBorderColor = PinedrawColors.Lime,
+    dayInSelectionRangeContainerColor = PinedrawColors.Lime.copy(alpha = 0.2f),
+    dayInSelectionRangeContentColor = PinedrawColors.Text
+)
+
+// Groups reservation review details inside a glass card.
+@Composable
+private fun ReserveCard(content: @Composable ColumnScope.() -> Unit) = GlassCard(content = content)
 
 // Shows one review label and its value.
 @Composable
-private fun ReserveRow(label: String, value: String) {
+private fun ReserveRow(label: String, value: String) = InfoRow(label, value)
+
+// Label and value on the light receipt card.
+@Composable
+private fun ReceiptRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, Modifier.weight(1f), color = PinedrawColors.TextSecondary)
-        Text(value, Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.Ink.copy(alpha = 0.6f))
+        Text(value, Modifier.weight(1.3f), style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.End)
     }
 }

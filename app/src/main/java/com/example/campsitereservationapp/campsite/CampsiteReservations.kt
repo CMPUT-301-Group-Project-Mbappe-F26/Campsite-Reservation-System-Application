@@ -21,6 +21,18 @@ import com.example.campsitereservationapp.model.reservationDateToday
 import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.EventBusy
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InitialsAvatar
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.SelectChip
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -146,11 +158,8 @@ fun CampsiteReservationsSection(campsiteId: String) {
 
     when {
         loading -> Unit
-        error.isNotEmpty() -> Column {
-            Text(error, color = PinedrawColors.Coral)
-            TextButton(onClick = { refresh++ }) { Text("Try again") }
-        }
-        else -> Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        error.isNotEmpty() -> ErrorState(error, onRetry = { refresh++ })
+        else -> Column(verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Gutter)) {
             BookedDatesCalendar(bookedNightNames(bookings), reservationDateToday())
             CampsiteReservationList(bookings, onReject = ::reject, rejectingId = rejectingId, message = rejectMessage)
         }
@@ -185,19 +194,16 @@ fun CampsiteReservationList(
         else -> bookings.active
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth().testTag("campsiteReservations"), shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Reservations", style = MaterialTheme.typography.titleLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    GlassCard(modifier = Modifier.testTag("campsiteReservations")) {
+        run {
+            Text("Reservations", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(
                     "Active" to bookings.active.size,
                     "Past" to bookings.past.size,
                     "Cancelled" to bookings.cancelled.size
                 ).forEach { (name, count) ->
-                    FilterChip(selected = filter == name, onClick = { filter = name }, label = { Text("$name ($count)") })
+                    SelectChip("$name ($count)", selected = filter == name, onClick = { filter = name })
                 }
             }
             if (shown.isEmpty()) Text(
@@ -206,12 +212,15 @@ fun CampsiteReservationList(
                     "Cancelled" -> "No cancelled reservations."
                     else -> "No active reservations."
                 },
+                style = MaterialTheme.typography.bodyMedium,
                 color = PinedrawColors.TextSecondary
             )
             shown.forEach { booking ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    InitialsAvatar(booking.entrantName, size = 40.dp)
+                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(booking.entrantName, fontWeight = FontWeight.SemiBold)
+                        Text(booking.entrantName, style = MaterialTheme.typography.titleSmall)
                         Text(
                             "${formatReservationDate(booking.reservation.checkInDate)} – " +
                                 formatReservationDate(booking.reservation.checkOutDate),
@@ -222,39 +231,30 @@ fun CampsiteReservationList(
                             color = PinedrawColors.Coral, style = MaterialTheme.typography.bodySmall
                         )
                     }
-                    if (filter == "Active" && onReject != null) TextButton(
-                        onClick = { confirming = booking }, enabled = rejectingId == null
-                    ) {
-                        Text(
-                            if (rejectingId == booking.reservation.id) "Rejecting…" else "Reject",
-                            color = if (rejectingId == null) PinedrawColors.Coral else PinedrawColors.TextMuted
-                        )
-                    }
+                    if (filter == "Active" && onReject != null) PinedrawButton(
+                        if (rejectingId == booking.reservation.id) "Rejecting…" else "Reject",
+                        onClick = { confirming = booking }, enabled = rejectingId == null,
+                        style = ButtonStyle.SoftDestructive, compact = true
+                    )
                 }
             }
-            if (message.isNotEmpty()) Text(message, color = PinedrawColors.TextSecondary)
+            if (message.isNotEmpty()) Text(message, style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
         }
     }
 
     confirming?.let { booking ->
-        AlertDialog(
-            onDismissRequest = { confirming = null },
-            title = { Text("Reject ${booking.entrantName}'s reservation?") },
-            text = {
-                Text(
-                    "Their stay from ${formatReservationDate(booking.reservation.checkInDate)} to " +
-                        "${formatReservationDate(booking.reservation.checkOutDate)} will be cancelled and the " +
-                        "dates released to other entrants. This cannot be undone."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { confirming = null; onReject?.invoke(booking) }) {
-                    Text("Yes, reject", color = PinedrawColors.Coral)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirming = null }) { Text("Keep reservation") }
-            }
+        PinedrawDialog(
+            title = "Reject ${booking.entrantName}'s reservation?",
+            message = "Their stay from ${formatReservationDate(booking.reservation.checkInDate)} to " +
+                "${formatReservationDate(booking.reservation.checkOutDate)} will be cancelled and the " +
+                "dates released to other entrants. This cannot be undone.",
+            icon = Icons.Rounded.EventBusy,
+            iconTint = PinedrawColors.Coral,
+            dismissText = "Keep reservation",
+            confirmText = "Yes, reject",
+            confirmStyle = ButtonStyle.Destructive,
+            onDismiss = { confirming = null },
+            onConfirm = { confirming = null; onReject?.invoke(booking) }
         )
     }
 }
