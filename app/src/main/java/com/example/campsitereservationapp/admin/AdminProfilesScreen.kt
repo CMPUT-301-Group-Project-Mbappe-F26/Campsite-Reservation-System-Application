@@ -17,9 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.User
-import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.ensureActive
@@ -31,9 +29,15 @@ import kotlinx.coroutines.withTimeoutOrNull
  * and remove campsite owners (US 03.07.01).
  *
  * [AdminProfilesScreen] loads profiles and details from Firebase and handles removal.
- * [AdminProfileList] (insert description here)
  *
  * Outstanding issues: (insert issues here)
+ */
+
+/**
+ * Loads all profiles for the admin and removes one after the admin confirms.
+ *
+ * @param onBack Goes back to the previous screen.
+ * @param onProfileClick Opens the selected campsite.
  */
 @Composable
 fun AdminProfilesScreen(
@@ -104,33 +108,7 @@ fun AdminProfilesScreen(
                     Text(error, color = PinedrawColors.Coral)
                     TextButton(onClick = { refresh++ }) { Text("Try again") }
                 }
-                else -> //AdminProfileList(
-//                    rows = rows,
-//                    removingId = removingId,
-//                    onProfileClick = onProfileClick,
-//                    onRemove = { row ->
-//                        removingId = row.id
-//                        scope.launch {
-//                            val message = try {
-//                                val removed = withTimeoutOrNull(20000) { userService.deleteProfile(row.id) }
-//                                if (removed == null) "Could not remove ${row.name}. Please try again."
-//                                else {
-//                                    rows = rows.filter { it.id != row.id }
-//                                    "${row.name} was removed"
-//                                }
-//                            } catch (_: Exception) {
-//                                coroutineContext.ensureActive() // Stop normally when leaving the screen.
-//                                "Could not remove ${row.name}. Please try again."
-//                            } finally {
-//                                removingId = null
-//                            }
-//                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-//                        }
-//                    }
-//                )
-                    // Need to change to make cleaner UI and allow for deletion;
-                    // using for now to test
-                    Column {
+                else -> Column {
                         Text("${rows.size} ${if (rows.size == 1) "profile" else "profiles"}", color = PinedrawColors.TextMuted)
                         Spacer(Modifier.height(12.dp))
                         LazyColumn(
@@ -156,7 +134,8 @@ fun AdminProfilesScreen(
                                                 user.email != "" -> "Email: ${user.email}"
                                                 else -> "No registered email"
                                         },
-                                            color = PinedrawColors.TextSecondary)
+                                            color = PinedrawColors.TextSecondary
+                                        )
                                         Text(
                                             text = when {
                                                 user.isAdmin -> "Admin"

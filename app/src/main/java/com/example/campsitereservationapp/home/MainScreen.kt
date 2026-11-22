@@ -31,6 +31,7 @@ import com.example.campsitereservationapp.admin.AdminCampsitesScreen
 import com.example.campsitereservationapp.admin.AdminDashboardScreen
 import com.example.campsitereservationapp.admin.AdminImagesScreen
 import com.example.campsitereservationapp.admin.AdminMessageLogsScreen
+import com.example.campsitereservationapp.admin.AdminProfileScreen
 import com.example.campsitereservationapp.admin.AdminProfilesScreen
 import com.example.campsitereservationapp.campsite.CreateCampsiteScreen
 import com.example.campsitereservationapp.campsite.CampsiteRegistrationViewModel
@@ -91,6 +92,7 @@ fun MainScreen(
     var showingAdminImages by rememberSaveable { mutableStateOf(false) }
     var showingMessageLogs by rememberSaveable { mutableStateOf(false) }
     var adminCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from the admin list
+    var adminProfileId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from the admin list
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -124,6 +126,7 @@ fun MainScreen(
         when {
             showingMessageLogs -> showingMessageLogs = false
             adminCampsiteId != null -> adminCampsiteId = null
+            adminProfileId != null -> adminProfileId = null
             showingAdminCampsites -> showingAdminCampsites = false
             showingAdminProfiles -> showingAdminProfiles = false
             showingAdminImages -> showingAdminImages = false
@@ -181,13 +184,17 @@ fun MainScreen(
                     onBack = { adminCampsiteId = null },
                     asAdmin = true
                 )
+                adminMode && adminProfileId != null -> AdminProfileScreen(
+                    userId = adminProfileId!!,
+                    onBack = { adminProfileId = null }
+                )
                 adminMode && showingAdminCampsites -> AdminCampsitesScreen(
                     onBack = { showingAdminCampsites = false },
                     onCampsiteClick = { adminCampsiteId = it }
                 )
                 adminMode && showingAdminProfiles -> AdminProfilesScreen(
                     onBack = { showingAdminProfiles = false },
-                    onProfileClick = { adminCampsiteId = it }
+                    onProfileClick = { adminProfileId = it }
                 )
                 adminMode && showingAdminImages -> AdminImagesScreen(
                     onBack = { showingAdminImages = false },
