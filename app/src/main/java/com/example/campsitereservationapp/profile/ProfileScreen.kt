@@ -4,19 +4,31 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.material3.*
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,13 +37,25 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.campsitereservationapp.model.User
+import com.example.campsitereservationapp.ui.components.IconBadge
+import com.example.campsitereservationapp.ui.components.ListGroup
+import com.example.campsitereservationapp.ui.components.ListRow
+import com.example.campsitereservationapp.ui.components.OverlineLabel
+import com.example.campsitereservationapp.ui.components.PageHeader
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.RowDivider
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import com.example.campsitereservationapp.ui.theme.PinedrawDimens
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 
-// Shows account information, the switch to host mode, and the Admin Dashboard link for admins.
+/**
+ * Profile tab: photo, name, the switch to Host mode, account settings and, for admins,
+ * a link to the Admin Dashboard.
+ */
 @Composable
 fun ProfileScreen(
     user: User,
@@ -43,203 +67,103 @@ fun ProfileScreen(
     onNotificationsChanged: (Boolean) -> Unit = {},
     onSaveImage: suspend (Uri?) -> Unit = {}
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    0f to Color(0xFF1E3A26),
-                    0.45f to PinedrawColors.Background,
-                    1f to PinedrawColors.Background
-                )
-            )
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp)
-    ) {
-        Text(
-            text = "Profile",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = (-0.5).sp,
-            color = PinedrawColors.Text
-        )
-
-        Spacer(Modifier.height(20.dp))
-
-        // User information
+    PinedrawBackground {
         Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            ProfileImageEditor(
-                user = user,
-                enabled = !savingNotifications,
-                onSaveImage = onSaveImage
-            )
-
-            Spacer(Modifier.height(14.dp))
-
-            Text(
-                text = user.name.ifBlank { "Pinedraw Guest" },
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.3).sp,
-                color = PinedrawColors.Text
-            )
-
-            Spacer(Modifier.height(4.dp))
-
-            Text(
-                text = user.city.ifBlank { "Welcome to Pinedraw" },
-                fontSize = 14.sp,
-                color = PinedrawColors.TextSecondary
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Host mode
-        Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onHostClick() }
-                .clip(RoundedCornerShape(24.dp))
-                .background(
-                    Brush.horizontalGradient(listOf(Color(0xFF3A2F17), Color(0xFF1C2318)))
-                )
-                .border(1.dp, PinedrawColors.Amber.copy(alpha = 0.45f), RoundedCornerShape(24.dp))
-                .padding(horizontal = 18.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = PinedrawSpacing.Gutter, vertical = PinedrawSpacing.Large),
+            verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Gutter)
         ) {
-            Icon(Icons.Default.Home, contentDescription = null, tint = PinedrawColors.Amber)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
+            PageHeader("Profile")
+
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                ProfileImageEditor(user = user, enabled = !savingNotifications, onSaveImage = onSaveImage)
+                Spacer(Modifier.height(PinedrawSpacing.Small))
                 Text(
-                    text = "Switch to Host mode",
+                    user.name.ifBlank { "Pinedraw Guest" },
+                    style = MaterialTheme.typography.headlineMedium,
                     color = PinedrawColors.Text,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    textAlign = TextAlign.Center
                 )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "List campsites and run your own draws",
-                    color = PinedrawColors.TextSecondary,
-                    fontSize = 13.sp
-                )
+                if (user.city.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(user.city, style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+                }
             }
-            Chevron(color = PinedrawColors.Amber)
-        }
 
-        // Admin tools, only for accounts marked as admins
-        if (user.isAdmin) {
-            Spacer(Modifier.height(24.dp))
-            SectionLabel("ADMIN")
-            OptionGroup {
-                ProfileOption("Admin Dashboard", Icons.Default.Build, onClick = onAdminClick)
+            HostModeCard(onHostClick)
+
+            if (user.isAdmin) {
+                Column(verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)) {
+                    OverlineLabel("Admin")
+                    ListGroup {
+                        ListRow("Admin Dashboard", Icons.Rounded.AdminPanelSettings, onAdminClick, tint = PinedrawColors.Coral)
+                    }
+                }
             }
-        }
 
-        Spacer(Modifier.height(24.dp))
-        SectionLabel("ACCOUNT")
-        OptionGroup {
-            ProfileOption("Personal information", Icons.Default.Person, enabled = !savingNotifications, onClick = onEditClick)
-            OptionDivider()
-            ProfileOption("Sign-in & security", Icons.Default.Lock) {}
-        }
-
-        Spacer(Modifier.height(24.dp))
-        SectionLabel("SETTINGS")
-        OptionGroup {
-            ProfileOption("Policy & guidelines", Icons.Default.Info, onClick = onPolicyClick)
-            OptionDivider()
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Lottery notifications", modifier = Modifier.weight(1f))
-                Switch(
-                    checked = user.notificationsEnabled,
-                    onCheckedChange = onNotificationsChanged,
-                    enabled = !savingNotifications,
-                    modifier = Modifier.semantics { contentDescription = "Lottery notifications" }
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)) {
+                OverlineLabel("Account")
+                ListGroup {
+                    ListRow(
+                        "Personal information", Icons.Rounded.Person, onEditClick,
+                        enabled = !savingNotifications
+                    )
+                    RowDivider()
+                    ListRow(
+                        "Lottery notifications", Icons.Rounded.Notifications, onClick = null,
+                        subtitle = "Draw results and owner updates",
+                        trailing = {
+                            Switch(
+                                checked = user.notificationsEnabled,
+                                onCheckedChange = onNotificationsChanged,
+                                enabled = !savingNotifications,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = PinedrawColors.Text,
+                                    checkedTrackColor = PinedrawColors.Lime,
+                                    uncheckedThumbColor = PinedrawColors.TextSecondary,
+                                    uncheckedTrackColor = PinedrawColors.Glass,
+                                    uncheckedBorderColor = PinedrawColors.Border
+                                ),
+                                modifier = Modifier.semantics { contentDescription = "Lottery notifications" }
+                            )
+                        }
+                    )
+                    RowDivider()
+                    ListRow("Policy & guidelines", Icons.Rounded.Description, onPolicyClick)
+                }
             }
+            Spacer(Modifier.height(PinedrawSpacing.Small))
         }
-        Spacer(Modifier.height(16.dp))
     }
 }
 
-// Shows a heading above a group of profile options.
+// Amber card that switches the app into Host mode.
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text,
-        color = PinedrawColors.TextMuted,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = 1.5.sp,
-        modifier = Modifier.padding(start = 4.dp, bottom = 10.dp)
-    )
-}
-
-// Groups profile options inside a rounded card.
-@Composable
-private fun OptionGroup(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(PinedrawColors.Glass)
-            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(24.dp)),
-        content = content
-    )
-}
-
-// Shows a clickable profile option.
-@Composable
-private fun ProfileOption(
-    title: String,
-    icon: ImageVector,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
+private fun HostModeCard(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled) { onClick() }
-            .padding(horizontal = 18.dp, vertical = 18.dp),
+            .clip(PinedrawRadius.Large)
+            .background(Brush.horizontalGradient(listOf(Color(0xFF3A2F17), Color(0xFF1C2318))))
+            .border(PinedrawDimens.BorderWidth, PinedrawColors.Amber.copy(alpha = 0.45f), PinedrawRadius.Large)
+            .clickable(onClick = onClick)
+            .padding(PinedrawDimens.CardPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = PinedrawColors.TextSecondary)
+        IconBadge(Icons.Rounded.SwapHoriz, tint = PinedrawColors.Amber, filled = true)
         Spacer(Modifier.width(14.dp))
-        Text(
-            text = title,
-            color = PinedrawColors.Text,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f)
+        Column(Modifier.weight(1f)) {
+            Text("Switch to Host mode", style = MaterialTheme.typography.titleMedium, color = PinedrawColors.Text)
+            Text("List campsites and run your own draws", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+        }
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = PinedrawColors.Amber,
+            modifier = Modifier.size(PinedrawDimens.IconSize)
         )
-        Chevron(color = PinedrawColors.TextMuted)
     }
-}
-
-// Shows the arrow beside a profile option.
-@Composable
-private fun Chevron(color: Color) {
-    Icon(
-        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-        contentDescription = null, tint = color, modifier = Modifier.size(22.dp)
-    )
-}
-
-// Separates profile options with a line.
-@Composable
-private fun OptionDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 18.dp),
-        thickness = 1.dp,
-        color = Color.White.copy(alpha = 0.06f)
-    )
 }

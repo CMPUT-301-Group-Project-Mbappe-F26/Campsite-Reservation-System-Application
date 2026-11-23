@@ -6,7 +6,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.DoNotDisturbOn
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.ui.draw.clip
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.PinedrawTextButton
+import com.example.campsitereservationapp.ui.components.SceneImage
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -80,31 +92,29 @@ private fun ColumnScope.CampsiteSelection(
     val selected = choices.find { it.campsiteId == selectedId && it.selectable }
     BackHandler(enabled = busy) { /* Keep the screen while declining is in progress. */ }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack, enabled = !busy) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-            Text("Back")
-        }
+        ReserveBackButton(onBack, enabled = !busy)
         Spacer(Modifier.weight(1f))
-        TextButton(onClick = onRefresh, enabled = !busy) { Text("Refresh") }
+        PinedrawTextButton("Refresh", onRefresh, enabled = !busy, icon = Icons.Rounded.Refresh)
     }
-    Column(Modifier.padding(horizontal = PinedrawSpacing.Screen), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.padding(horizontal = PinedrawSpacing.Gutter), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        StepLabel("You won · pick a campsite")
         Text("Choose a campsite", style = MaterialTheme.typography.headlineLarge)
-        Text("Select one campsite from your lottery, then choose your dates.", color = PinedrawColors.TextSecondary)
-        if (choices.none { it.selectable }) Text(
-            "No campsites have available dates for your party. You can refresh or decline your spot.",
-            color = PinedrawColors.Coral)
+        Text("Select one campsite from your lottery, then choose your dates.", style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+        if (choices.none { it.selectable }) InlineMessage(
+            "No campsites have available dates for your party. You can refresh or decline your spot.")
     }
     LazyColumn(Modifier.weight(1f).fillMaxWidth(),
-        contentPadding = PaddingValues(PinedrawSpacing.Screen), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        contentPadding = PaddingValues(PinedrawSpacing.Gutter), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         items(choices, key = { it.campsiteId }) { choice ->
             CampsiteChoiceCard(choice, selectedId == choice.campsiteId, !busy) { selectedId = choice.campsiteId }
         }
     }
-    Column(Modifier.padding(PinedrawSpacing.Screen), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { selected?.let { onChoose(it.campsiteId) } }, enabled = selected != null && !busy,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = MaterialTheme.shapes.large) {
-            Text("Choose dates", fontWeight = FontWeight.Bold)
-        }
+    Column(
+        Modifier.background(PinedrawColors.Surface).padding(horizontal = PinedrawSpacing.Gutter, vertical = PinedrawSpacing.Medium),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        PinedrawButton("Choose dates", { selected?.let { onChoose(it.campsiteId) } }, Modifier.fillMaxWidth(),
+            enabled = selected != null && !busy, icon = Icons.Rounded.CalendarMonth)
         DeclineSpotAction(onDecline, onBack, enabled = !busy, onBusyChanged = { busy = it })
     }
 }
@@ -113,17 +123,23 @@ private fun ColumnScope.CampsiteSelection(
 @Composable
 private fun CampsiteChoiceCard(choice: ReservationCampsiteChoice, selected: Boolean, enabled: Boolean, onSelect: () -> Unit) {
     val site = choice.campsite
+    val isSelected = selected && choice.selectable
     Card(onClick = onSelect, enabled = enabled && choice.selectable,
-        modifier = Modifier.fillMaxWidth().testTag("campsite-choice-${choice.campsiteId}"),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text,
+        modifier = Modifier.fillMaxWidth().testTag("campsite-choice-${choice.campsiteId}")
+            .border(1.dp, if (isSelected) PinedrawColors.Lime else PinedrawColors.Border, PinedrawRadius.Large),
+        shape = PinedrawRadius.Large,
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) PinedrawColors.Lime.copy(alpha = 0.08f) else PinedrawColors.Glass,
+            contentColor = PinedrawColors.Text,
             disabledContainerColor = PinedrawColors.Glass, disabledContentColor = PinedrawColors.TextMuted)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            SceneImage(choice.campsiteId, Modifier.size(64.dp).clip(PinedrawRadius.Medium))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(site?.name?.ifBlank { "Unnamed campsite" } ?: "Unavailable campsite",
-                    style = MaterialTheme.typography.titleLarge)
+                    style = MaterialTheme.typography.titleMedium)
                 if (site != null) {
-                    Text(site.location, color = PinedrawColors.TextSecondary)
+                    Text(site.location, style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
                     Text("Up to ${site.maxOccupancy ?: 0} guests · " + String.format(Locale.CANADA, "$%.2f / night", site.pricePerNight),
                         style = MaterialTheme.typography.bodySmall)
                 }
@@ -131,7 +147,10 @@ private fun CampsiteChoiceCard(choice: ReservationCampsiteChoice, selected: Bool
                     color = if (choice.selectable) PinedrawColors.Lime else PinedrawColors.Coral,
                     style = MaterialTheme.typography.bodySmall)
             }
-            RadioButton(selected = selected && choice.selectable, onClick = onSelect, enabled = enabled && choice.selectable)
+            RadioButton(
+                selected = isSelected, onClick = onSelect, enabled = enabled && choice.selectable,
+                colors = RadioButtonDefaults.colors(selectedColor = PinedrawColors.Lime, unselectedColor = PinedrawColors.TextSecondary)
+            )
         }
     }
 }
@@ -148,17 +167,21 @@ internal fun DeclineSpotAction(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        Text("None of these work?", color = PinedrawColors.TextSecondary)
-        TextButton(onClick = { confirming = true }, enabled = enabled && !busy) {
-            Text(if (busy) "Declining..." else "Decline spot", color = PinedrawColors.Coral)
-        }
+        Text("None of these work?", style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+        PinedrawTextButton(if (busy) "Declining..." else "Decline spot", { confirming = true },
+            color = PinedrawColors.Coral, enabled = enabled && !busy)
     }
-    if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
-    if (confirming) AlertDialog(onDismissRequest = { confirming = false },
-        title = { Text("Decline this spot?") },
-        text = { Text("You will give up this reservation opportunity. This cannot be undone.") },
-        dismissButton = { TextButton(onClick = { confirming = false }) { Text("Keep my spot") } },
-        confirmButton = { TextButton(onClick = {
+    InlineMessage(error)
+    if (confirming) PinedrawDialog(
+        title = "Decline this spot?",
+        message = "You will give up this reservation opportunity. This cannot be undone.",
+        icon = Icons.Rounded.DoNotDisturbOn,
+        iconTint = PinedrawColors.Coral,
+        dismissText = "Keep my spot",
+        confirmText = "Decline",
+        confirmStyle = ButtonStyle.Destructive,
+        onDismiss = { confirming = false },
+        onConfirm = {
             confirming = false
             busy = true
             onBusyChanged(true)
@@ -182,5 +205,5 @@ internal fun DeclineSpotAction(
                     onBusyChanged(false)
                 }
             }
-        }) { Text("Decline", color = PinedrawColors.Coral) } })
+        })
 }

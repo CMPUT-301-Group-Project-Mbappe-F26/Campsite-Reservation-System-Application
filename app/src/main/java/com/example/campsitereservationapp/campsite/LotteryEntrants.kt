@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -12,6 +13,13 @@ import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.service.LotteryService
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material3.Icon
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InitialsAvatar
+import com.example.campsitereservationapp.ui.components.StatusChip
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -96,10 +104,7 @@ fun LotteryEntrantsSection(campsiteId: String) {
 
     when {
         loading -> Unit
-        error.isNotEmpty() -> Column {
-            Text(error, color = PinedrawColors.Coral)
-            TextButton(onClick = { refresh++ }) { Text("Try again") }
-        }
+        error.isNotEmpty() -> ErrorState(error, onRetry = { refresh++ })
         lottery != null -> LotteryEntrantList(entrants)
     }
 }
@@ -111,25 +116,23 @@ fun LotteryEntrantsSection(campsiteId: String) {
  */
 @Composable
 fun LotteryEntrantList(entrants: List<LotteryEntrant>) {
-    Card(
-        modifier = Modifier.fillMaxWidth().testTag("lotteryEntrants"), shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Waiting list", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "${entrants.size} ${if (entrants.size == 1) "entrant" else "entrants"}",
-                color = PinedrawColors.TextMuted
-            )
-            if (entrants.isEmpty()) Text("No entrants have joined yet.", color = PinedrawColors.TextSecondary)
-            entrants.forEachIndexed { index, entrant ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("${index + 1}.", color = PinedrawColors.TextMuted)
-                    Column(Modifier.weight(1f)) {
-                        Text(entrant.name, fontWeight = FontWeight.SemiBold)
-                        if (entrant.city.isNotBlank()) Text(entrant.city, color = PinedrawColors.TextSecondary,
-                            style = MaterialTheme.typography.bodySmall)
-                    }
+    GlassCard(modifier = Modifier.testTag("lotteryEntrants")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Groups, null, tint = PinedrawColors.Lime, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Waiting list", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            StatusChip("${entrants.size} ${if (entrants.size == 1) "entrant" else "entrants"}", color = PinedrawColors.Lime, showDot = false)
+        }
+        if (entrants.isEmpty()) Text("No entrants have joined yet.", style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+        entrants.forEachIndexed { index, entrant ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${index + 1}.", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextMuted, modifier = Modifier.width(24.dp))
+                InitialsAvatar(entrant.name, size = 36.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(entrant.name, style = MaterialTheme.typography.titleSmall)
+                    if (entrant.city.isNotBlank()) Text(entrant.city, color = PinedrawColors.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

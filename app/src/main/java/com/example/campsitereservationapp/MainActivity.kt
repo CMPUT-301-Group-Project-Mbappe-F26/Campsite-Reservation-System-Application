@@ -11,12 +11,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.campsitereservationapp.auth.OnboardingScreen
 import com.example.campsitereservationapp.auth.WelcomeScreen
+import com.example.campsitereservationapp.auth.hasCompletedOnboarding
+import com.example.campsitereservationapp.auth.markOnboardingComplete
 import com.example.campsitereservationapp.home.MainScreen
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.notification.LotteryNotificationService
@@ -101,27 +105,28 @@ class MainActivity : ComponentActivity() {
                     onDispose { listener?.remove() }
                 }
 
+                var onboarded by remember { mutableStateOf(hasCompletedOnboarding(this@MainActivity)) }
+
                 when {
-                    checkingUser || loading -> {
+                    checkingUser -> {
                         Box(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().background(PinedrawColors.Background),
                             contentAlignment = Alignment.Center
                         ) {
                             CircularProgressIndicator(color = PinedrawColors.Lime)
                         }
                     }
+                    user == null && !onboarded -> {
+                        OnboardingScreen(onFinish = {
+                            markOnboardingComplete(this@MainActivity)
+                            onboarded = true
+                        })
+                    }
                     user == null -> {
                         WelcomeScreen(
-                            onGoogleClick = {
-                                Toast.makeText(this, "Google sign-in not available yet", Toast.LENGTH_SHORT).show()
-                            },
-                            onRegisterClick = {
-                                Toast.makeText(this, "Registration not available yet", Toast.LENGTH_SHORT).show()
-                            },
-                            onLoginClick = {
-                                Toast.makeText(this, "Login not available yet", Toast.LENGTH_SHORT).show()
-                            },
+                            loading = loading,
                             onGuestClick = {
+                                if (loading) return@WelcomeScreen
                                 loading = true
                                 scope.launch {
                                     try {
@@ -129,7 +134,7 @@ class MainActivity : ComponentActivity() {
                                     } catch (_: Exception) {
                                         Toast.makeText(
                                             this@MainActivity,
-                                            "Could not continue as guest",
+                                            "Could not continue as guest. Check your connection and try again.",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     } finally {

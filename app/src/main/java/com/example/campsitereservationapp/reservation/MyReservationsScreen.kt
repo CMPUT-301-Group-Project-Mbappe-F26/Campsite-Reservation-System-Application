@@ -2,20 +2,53 @@ package com.example.campsitereservationapp.reservation
 
 import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.*
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.EmojiEvents
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
+import com.example.campsitereservationapp.model.RESERVATION_CONFIRMED
+import com.example.campsitereservationapp.model.RESERVATION_REJECTED
+import com.example.campsitereservationapp.ui.components.EmptyState
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.IconBadge
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.PageHeader
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.SceneImage
+import com.example.campsitereservationapp.ui.components.SegmentedTabs
+import com.example.campsitereservationapp.ui.components.StatusChip
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
 import com.example.campsitereservationapp.feedback.StayFeedback
 import com.example.campsitereservationapp.feedback.StayFeedbackActions
@@ -172,105 +205,116 @@ fun MyReservationsContent(
     var showPast by rememberSaveable { mutableStateOf(false) }
     val shown = if (showPast) past else reservations
 
-    Column(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
-            .statusBarsPadding().padding(horizontal = 20.dp)
-    ) {
-        Spacer(Modifier.height(16.dp))
-        Text("My Reservations", style = MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            if (showPast) "Campsite stays you have finished." else "Your upcoming campsite stays.",
-            color = PinedrawColors.TextSecondary
-        )
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = !showPast, onClick = { showPast = false }, label = { Text("Upcoming") })
-            FilterChip(selected = showPast, onClick = { showPast = true }, label = { Text("Past") })
-        }
-        Spacer(Modifier.height(16.dp))
-        // Only appears when the entrant has won a spot they have not used yet.
-        if (!showPast) wins.forEach { (lotteryId, campsiteName) ->
-            Card(
-                onClick = { onReserveClick(lotteryId) },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-            ) {
-                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("You won a spot", color = PinedrawColors.Lime, fontWeight = FontWeight.Bold)
-                        Text(campsiteName.ifBlank { "Unnamed campsite" }, fontWeight = FontWeight.Bold)
-                        Text("Choose your dates to reserve.", color = PinedrawColors.TextSecondary)
-                    }
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
-                        modifier = Modifier.size(20.dp), tint = PinedrawColors.TextMuted
-                    )
-                }
+    PinedrawBackground {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().statusBarsPadding(),
+            contentPadding = PaddingValues(start = PinedrawSpacing.Gutter, end = PinedrawSpacing.Gutter, top = PinedrawSpacing.Large, bottom = PinedrawSpacing.Screen),
+            verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Large)
+        ) {
+            item { PageHeader("My trips") }
+            item {
+                SegmentedTabs(
+                    options = listOf("Upcoming", "Past"),
+                    selectedIndex = if (showPast) 1 else 0,
+                    onSelect = { showPast = it == 1 }
+                )
             }
-        }
-
-        when {
-            loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PinedrawColors.Lime)
-            }
-            error.isNotEmpty() -> Column(Modifier.padding(vertical = 24.dp)) {
-                Text(error, color = PinedrawColors.Coral)
-                TextButton(onClick = onRetry) { Text("Try again") }
-            }
-            shown.isEmpty() -> Card(
-                modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-            ) {
-                Column(Modifier.padding(24.dp)) {
-                    Text(
-                        if (showPast) "No past reservations" else "No active reservations",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        if (showPast) "Stays you have finished will appear here." else "Campsites you reserve will appear here.",
-                        color = PinedrawColors.TextSecondary
-                    )
-                }
-            }
-            else -> LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                items(shown, key = { it.id }) { reservation ->
-                    Card(
-                        onClick = { onReservationClick(reservation.id) },
-                        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-                    ) {
-                        Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(reservation.campsiteName.ifBlank { "Unnamed campsite" }, fontWeight = FontWeight.Bold)
-                                Text(
-                                    "${formatReservationDate(reservation.checkInDate)} – ${formatReservationDate(reservation.checkOutDate)}",
-                                    color = PinedrawColors.TextSecondary
-                                )
-                                // A past stay is still stored as Confirmed, so show that it is over.
-                                Text(
-                                    if (showPast) "Completed" else reservation.status,
-                                    color = if (showPast) PinedrawColors.TextMuted else PinedrawColors.Lime,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                if (showPast && feedback != null) {
-                                    StayFeedbackActions(reservation, feedback, onRate, onReview)
-                                }
-                            }
-                            Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
-                                modifier = Modifier.size(20.dp), tint = PinedrawColors.TextMuted
-                            )
+            // Only appears when the entrant has won a spot they have not used yet.
+            if (!showPast) items(wins, key = { "win-${it.first}" }) { (lotteryId, campsiteName) ->
+                GlassCard(
+                    onClick = { onReserveClick(lotteryId) },
+                    borderColor = PinedrawColors.Lime.copy(alpha = 0.6f),
+                    container = PinedrawColors.Lime.copy(alpha = 0.08f)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Rounded.EmojiEvents, filled = true)
+                        Spacer(Modifier.width(PinedrawSpacing.Medium))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("You won a spot", style = MaterialTheme.typography.titleMedium, color = PinedrawColors.Lime)
+                            Text(campsiteName.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.bodyLarge, color = PinedrawColors.Text)
                         }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clip(PinedrawRadius.Pill).background(PinedrawColors.PrimaryGradient)
+                            .padding(horizontal = PinedrawSpacing.Gutter, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text("Choose your dates to reserve.", style = MaterialTheme.typography.labelLarge, color = PinedrawColors.Ink)
+                        Spacer(Modifier.width(6.dp))
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = PinedrawColors.Ink, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            when {
+                loading -> item { LoadingState() }
+                error.isNotEmpty() -> item { ErrorState(error, onRetry = onRetry) }
+                shown.isEmpty() -> item {
+                    EmptyState(
+                        icon = if (showPast) Icons.Rounded.History else Icons.Rounded.Cabin,
+                        title = if (showPast) "No past reservations" else "No active reservations",
+                        message = if (showPast) "Stays you have finished will appear here." else "Campsites you reserve will appear here."
+                    )
+                }
+                else -> items(shown, key = { it.id }) { reservation ->
+                    TripCard(
+                        reservation = reservation,
+                        past = showPast,
+                        onClick = { onReservationClick(reservation.id) }
+                    ) {
+                        if (showPast && feedback != null) StayFeedbackActions(reservation, feedback, onRate, onReview)
                     }
                 }
             }
         }
     }
+}
+
+// One reservation: a landscape banner with its status, then the campsite and dates.
+@Composable
+private fun TripCard(
+    reservation: Reservation,
+    past: Boolean,
+    onClick: () -> Unit,
+    extra: @Composable () -> Unit
+) {
+    GlassCard(onClick = onClick, contentPadding = 12.dp) {
+        Box(Modifier.fillMaxWidth().height(if (past) 110.dp else 160.dp)) {
+            SceneImage(reservation.campsiteId.ifBlank { reservation.campsiteName }, Modifier.matchParentSize().clip(PinedrawRadius.Medium))
+            Box(Modifier.padding(10.dp)) {
+                // A past stay is still stored as Confirmed, so show that it is over.
+                StatusChip(
+                    if (past) "Completed" else reservation.status,
+                    color = if (past) PinedrawColors.Text else statusColor(reservation.status),
+                    icon = if (past || reservation.status == RESERVATION_CONFIRMED) Icons.Rounded.Check else null,
+                    modifier = Modifier.clip(PinedrawRadius.Pill).background(PinedrawColors.Background.copy(alpha = 0.75f))
+                )
+            }
+        }
+        Column(Modifier.padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                reservation.campsiteName.ifBlank { "Unnamed campsite" },
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.CalendarMonth, null, tint = PinedrawColors.TextSecondary, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "${formatReservationDate(reservation.checkInDate)} – ${formatReservationDate(reservation.checkOutDate)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PinedrawColors.TextSecondary
+                )
+            }
+            extra()
+        }
+    }
+}
+
+private fun statusColor(status: String) = when (status) {
+    RESERVATION_CONFIRMED -> PinedrawColors.Lime
+    RESERVATION_CANCELLED, RESERVATION_REJECTED -> PinedrawColors.Coral
+    else -> PinedrawColors.TextSecondary
 }

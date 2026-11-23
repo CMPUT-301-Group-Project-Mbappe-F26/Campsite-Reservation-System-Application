@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +16,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.material.icons.rounded.NotificationsNone
+import com.example.campsitereservationapp.ui.components.EmptyState
+import com.example.campsitereservationapp.ui.components.ErrorState
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -94,7 +97,7 @@ internal fun SentNotificationHistory(
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             HistoryIconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
             }
             Text(
                 "Sent notifications",
@@ -103,7 +106,7 @@ internal fun SentNotificationHistory(
                 fontWeight = FontWeight.Bold
             )
             HistoryIconButton(onClick = onNewNotification) {
-                Icon(Icons.Default.Add, contentDescription = "New notification")
+                Icon(Icons.Rounded.Add, contentDescription = "New notification")
             }
         }
 
@@ -120,15 +123,8 @@ internal fun SentNotificationHistory(
             loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = PinedrawColors.Lime)
             }
-            error.isNotEmpty() -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(error, color = PinedrawColors.Coral)
-                TextButton(onClick = { refresh++ }) { Text("Try again") }
-            }
-            notifications.isEmpty() -> Text(
-                "No sent notifications yet.",
-                color = PinedrawColors.TextSecondary,
-                modifier = Modifier.padding(vertical = 18.dp)
-            )
+            error.isNotEmpty() -> ErrorState(error, onRetry = { refresh++ })
+            notifications.isEmpty() -> EmptyState(Icons.Rounded.NotificationsNone, "No sent notifications yet.")
             else -> notifications.forEach { SentNotificationCard(it) }
         }
     }
@@ -153,7 +149,7 @@ private fun SentNotificationCard(notification: SentNotification) {
         SimpleDateFormat("MMM d · h:mm a", Locale.CANADA).format(it)
     }.orEmpty()
 
-    Surface(color = PinedrawColors.Glass, shape = RoundedCornerShape(20.dp)) {
+    Surface(color = PinedrawColors.Glass, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, PinedrawColors.Border)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(notification.title, fontWeight = FontWeight.Bold)
             Text(

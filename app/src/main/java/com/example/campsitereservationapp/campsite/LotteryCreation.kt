@@ -10,8 +10,25 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.ConfirmationNumber
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Refresh
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.CircleIconButton
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.PinedrawTextButton
+import com.example.campsitereservationapp.ui.components.PinedrawTextField
+import com.example.campsitereservationapp.ui.components.pinedrawFieldColors
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -133,38 +150,33 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
 
     BackHandler { close() }
 
-    if (confirmation != null) AlertDialog(
-        onDismissRequest = { confirmation = null },
-        title = { Text("Are you sure?") },
-        text = { Text(if (confirmation == "delete") "Delete this lottery and notify all participating entrants?"
-            else "Update this lottery and notify all participating entrants?") },
-        dismissButton = { TextButton(onClick = { confirmation = null }) { Text("Cancel") } },
-        confirmButton = { TextButton(onClick = {
+    if (confirmation != null) PinedrawDialog(
+        title = "Are you sure?",
+        message = if (confirmation == "delete") "Delete this lottery and notify all participating entrants?"
+            else "Update this lottery and notify all participating entrants?",
+        icon = if (confirmation == "delete") Icons.Rounded.DeleteOutline else Icons.Rounded.ConfirmationNumber,
+        iconTint = if (confirmation == "delete") PinedrawColors.Coral else PinedrawColors.Lime,
+        confirmText = "Proceed",
+        confirmStyle = if (confirmation == "delete") ButtonStyle.Destructive else ButtonStyle.Primary,
+        onDismiss = { confirmation = null },
+        onConfirm = {
             val action = confirmation
             confirmation = null
             if (action == "delete") submission.delete(existingLottery!!)
             else submission.submit(draft, existingLottery)
-        }) { Text("Proceed") } }
+        }
     )
 
+    PinedrawBackground {
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(
-                0f to Color(0xFF1E3A26),
-                0.45f to PinedrawColors.Background,
-                1f to PinedrawColors.Background
-            ))
             .statusBarsPadding().navigationBarsPadding().imePadding()
-            .padding(horizontal = PinedrawSpacing.Screen)
+            .padding(horizontal = PinedrawSpacing.Gutter)
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = close, enabled = !submission.saving) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Back")
-            }
+        Row(Modifier.fillMaxWidth().padding(vertical = PinedrawSpacing.Small), verticalAlignment = Alignment.CenterVertically) {
+            CircleIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", close, enabled = !submission.saving)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = close, enabled = !submission.saving) { Text("Cancel") }
+            PinedrawTextButton("Cancel", close, color = PinedrawColors.TextSecondary, enabled = !submission.saving)
         }
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
@@ -174,24 +186,26 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
             Text(campsite.name.ifBlank { "Unnamed campsite" },
                 style = MaterialTheme.typography.titleLarge, color = PinedrawColors.Lime)
             Text("Set when entrants can join, when winners can book, and the stay dates on offer.",
-                color = PinedrawColors.TextSecondary)
+                style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
 
             LotterySection("Campsites") {
                 Text("Add up to $MAX_LOTTERY_CAMPSITES owned campsites. Winners share one draw and choose a listed campsite when booking. Max uses the combined occupancy.",
-                    color = PinedrawColors.TextSecondary)
+                    style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
                 selectedIds.forEach { id ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(choices.find { it.id == id }?.name ?: "Unavailable campsite ($id)", Modifier.weight(1f))
-                        TextButton(enabled = !submission.saving && selectedIds.size > 1 && choices.find { it.id == id }?.ownerId == campsite.ownerId, onClick = {
+                        Icon(Icons.Rounded.Cabin, null, tint = PinedrawColors.Lime, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(choices.find { it.id == id }?.name ?: "Unavailable campsite ($id)", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                        PinedrawTextButton("Remove", color = PinedrawColors.Coral,
+                            enabled = !submission.saving && selectedIds.size > 1 && choices.find { it.id == id }?.ownerId == campsite.ownerId, onClick = {
                             selectedIds = ArrayList(selectedIds.filterNot { it == id })
                             duplicateError = ""
-                        }) { Text("Remove") }
+                        })
                     }
                 }
                 Box {
-                    OutlinedButton(onClick = { addingCampsite = true }, enabled = !submission.saving && !submission.loadingCampsites) {
-                        Text("Add campsite")
-                    }
+                    PinedrawButton("Add campsite", { addingCampsite = true }, style = ButtonStyle.Ghost, icon = Icons.Rounded.Add,
+                        compact = true, enabled = !submission.saving && !submission.loadingCampsites)
                     DropdownMenu(expanded = addingCampsite, onDismissRequest = { addingCampsite = false }) {
                         choices.filter { it.ownerId == campsite.ownerId }.forEach { site ->
                             DropdownMenuItem(text = { Text(site.name) }, onClick = {
@@ -207,27 +221,28 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                     }
                 }
                 if (submission.loadingCampsites) CircularProgressIndicator(Modifier.size(20.dp))
-                if (duplicateError.isNotEmpty()) Text(duplicateError, color = PinedrawColors.Coral)
+                InlineMessage(duplicateError)
                 if (!submission.loadingCampsites && submission.campsites.isEmpty()) {
-                    TextButton(onClick = { submission.loadCampsites(existingLottery) }) { Text("Reload campsites") }
+                    PinedrawTextButton("Reload campsites", { submission.loadCampsites(existingLottery) }, icon = Icons.Rounded.Refresh)
                 }
-                Text("Invite other owners from Lottery collaboration on your campsite details after saving.", color = PinedrawColors.TextSecondary)
+                Text("Invite other owners from Lottery collaboration on your campsite details after saving.",
+                    style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextMuted)
                 if (existingLottery != null && existingLottery.participatingOwnerIds().size > 1 && lotteryTermsChanged(existingLottery, draft)) {
-                    Text("Changing shared dates removes other owners' campsites until they accept again. Set capacity using your own campsites during reapproval.", color = PinedrawColors.Coral)
+                    InlineMessage("Changing shared dates removes other owners' campsites until they accept again. Set capacity using your own campsites during reapproval.", color = PinedrawColors.Amber)
                 }
             }
 
             LotterySection("Waiting list") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = limitWaitlist, enabled = !submission.saving, onCheckedChange = { limitWaitlist = it })
-                    Text("Limit participating entrants (optional)")
+                    Text("Limit participating entrants (optional)", style = MaterialTheme.typography.bodyMedium)
                 }
-                if (limitWaitlist) OutlinedTextField(
+                if (limitWaitlist) PinedrawTextField(
                     value = waitlistLimit, onValueChange = { value -> if (value.all { it in '0'..'9' }) waitlistLimit = value },
-                    enabled = !submission.saving, label = { Text("Maximum entrants") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("Must be greater than the number of winners.") }
-                ) else Text("No waiting-list limit", color = PinedrawColors.TextSecondary)
+                    enabled = !submission.saving, label = "Maximum entrants",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = "Must be greater than the number of winners."
+                ) else Text("No waiting-list limit", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
             }
 
             LotterySection("Winners") {
@@ -259,12 +274,8 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.medium,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = PinedrawColors.Glass,
-                            unfocusedContainerColor = PinedrawColors.Glass,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.08f)
-                        )
+                        shape = PinedrawRadius.Medium,
+                        colors = pinedrawFieldColors()
                     )
                 }
                 Text(
@@ -279,18 +290,18 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                 color = PinedrawColors.TextSecondary
             )
             LotterySection("Registration period") {
-                Text("When entrants can join the waiting list.", color = PinedrawColors.TextSecondary)
+                Text("When entrants can join the waiting list.", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
                 LotteryDateField("Registration start", registrationStart, !submission.saving) { registrationStart = it }
                 LotteryDateField("Registration end", registrationEnd, !submission.saving) { registrationEnd = it }
             }
             LotterySection("Booking period") {
-                Text("When lottery winners can make a reservation.", color = PinedrawColors.TextSecondary)
+                Text("When lottery winners can make a reservation.", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
                 LotteryDateField("Booking start", bookingStart, !submission.saving) { bookingStart = it }
                 LotteryDateField("Booking end", bookingEnd, !submission.saving) { bookingEnd = it }
             }
             LotterySection("Stay period") {
                 Text("Offer stay dates within every selected campsite's availability. The checkout date is not a booked night.",
-                    color = PinedrawColors.TextSecondary)
+                    style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
                 selectedSites.forEach { site ->
                     Text("${site.name}: ${site.availableFrom.ifBlank { "Any start date" }} to ${site.availableUntil.ifBlank { "No end date" }}",
                         style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
@@ -308,8 +319,7 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                 }
             }
             if (submission.error.isNotEmpty()) {
-                Text(submission.error, color = PinedrawColors.Coral,
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                InlineMessage(submission.error, Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
             if (validationError != null && capacityError == null) {
                 Text(validationError,
@@ -317,28 +327,25 @@ fun LotteryCreation(campsite: Campsite, onCancel: () -> Unit, existingLottery: L
                     color = if (allDatesSelected && winnerCount > 0) PinedrawColors.Coral else PinedrawColors.TextSecondary,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
             }
-            Button(
+            PinedrawButton(
+                if (submission.saving) "Saving..." else if (existingLottery == null) "Start Lottery" else "Update",
                 onClick = { if (existingLottery == null) submission.submit(draft) else confirmation = "update" },
                 enabled = !submission.saving && !submission.loadingCampsites && capacityError == null && validationError == null && availabilityError == null,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PinedrawColors.Lime, contentColor = PinedrawColors.Ink
-                )
-            ) {
-                if (submission.saving) {
-                    CircularProgressIndicator(Modifier.size(20.dp), color = PinedrawColors.Lime)
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(if (submission.saving) "Saving..." else if (existingLottery == null) "Start Lottery" else "Update", fontWeight = FontWeight.Bold)
-            }
-            if (existingLottery != null) OutlinedButton(
-                onClick = { confirmation = "delete" }, enabled = !submission.saving && existingLottery.participatingOwnerIds().size == 1,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            ) { Text("Delete", color = PinedrawColors.Coral) }
+                loading = submission.saving,
+                icon = Icons.Rounded.ConfirmationNumber,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (existingLottery != null) PinedrawButton(
+                "Delete", { confirmation = "delete" }, Modifier.fillMaxWidth(),
+                style = ButtonStyle.SoftDestructive, icon = Icons.Rounded.DeleteOutline,
+                enabled = !submission.saving && existingLottery.participatingOwnerIds().size == 1
+            )
             if (existingLottery != null && existingLottery.participatingOwnerIds().size > 1)
-                Text("Other owners must withdraw their campsites before you can delete this lottery.", color = PinedrawColors.TextSecondary)
+                Text("Other owners must withdraw their campsites before you can delete this lottery.",
+                    style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+            Spacer(Modifier.height(PinedrawSpacing.Medium))
         }
+    }
     }
 }
 
@@ -366,7 +373,7 @@ private fun CapacityHelp() {
             onClick = { scope.launch { state.show() } },
             modifier = Modifier.semantics { contentDescription = "Capacity rules" }
         ) {
-            Text("?", color = PinedrawColors.Lime, fontWeight = FontWeight.Bold)
+            Icon(Icons.AutoMirrored.Rounded.HelpOutline, null, tint = PinedrawColors.Lime)
         }
     }
 }
@@ -379,14 +386,9 @@ private fun CapacityHelp() {
  */
 @Composable
 private fun LotterySection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-    ) {
-        Column(Modifier.padding(PinedrawSpacing.Large), verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Medium)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            content()
-        }
+    GlassCard {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        content()
     }
 }
 
@@ -418,15 +420,11 @@ private fun LotteryDateField(
     var picking by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = PinedrawColors.TextSecondary)
-        OutlinedButton(onClick = { picking = true }, enabled = enabled,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics {
-                contentDescription = "$label: ${value.ifBlank { "Select date" }}"
-            },
-            shape = MaterialTheme.shapes.medium) {
-            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(value.ifBlank { "Select date" })
-        }
+        PinedrawButton(
+            value.ifBlank { "Select date" }, { picking = true },
+            Modifier.fillMaxWidth().semantics { contentDescription = "$label: ${value.ifBlank { "Select date" }}" },
+            style = ButtonStyle.Ghost, icon = Icons.Rounded.CalendarMonth, enabled = enabled, compact = true
+        )
     }
     if (picking) {
         val formatter = remember {

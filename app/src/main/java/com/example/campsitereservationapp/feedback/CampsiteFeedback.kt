@@ -18,6 +18,16 @@ import com.example.campsitereservationapp.model.formatReservationDate
 import com.example.campsitereservationapp.service.FeedbackService
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.RateReview
+import androidx.compose.material.icons.rounded.Star
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InitialsAvatar
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -168,10 +178,7 @@ private fun FeedbackSection(
 
     when {
         loading -> Unit
-        error.isNotEmpty() -> Column {
-            Text(error, color = PinedrawColors.Coral)
-            TextButton(onClick = { refresh++ }) { Text("Try again") }
-        }
+        error.isNotEmpty() -> ErrorState(error, onRetry = { refresh++ })
         else -> FeedbackList(title, kind, entries, emptyText, onRemove, removingId, message)
     }
 }
@@ -201,51 +208,48 @@ fun FeedbackList(
 ) {
     var confirming by remember { mutableStateOf<FeedbackEntry?>(null) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth().testTag("feedback-$kind"), shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(if (entries.isEmpty()) title else "$title (${entries.size})", style = MaterialTheme.typography.titleLarge)
-            if (entries.isEmpty()) Text(emptyText, color = PinedrawColors.TextSecondary)
-            entries.forEach { entry ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(entry.entrantName, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            formatReservationDate(entry.date),
-                            color = PinedrawColors.TextSecondary, style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(entry.text, color = if (kind == "rating") StarColor else PinedrawColors.Text)
-                    }
-                    if (onRemove != null) TextButton(onClick = { confirming = entry }, enabled = removingId == null) {
-                        Text(
-                            if (removingId == entry.id) "Removing…" else "Remove",
-                            color = if (removingId == null) PinedrawColors.Coral else PinedrawColors.TextMuted
-                        )
-                    }
-                }
-            }
-            if (message.isNotEmpty()) Text(message, color = PinedrawColors.TextSecondary)
+    GlassCard(modifier = Modifier.testTag("feedback-$kind")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (kind == "rating") Icons.Rounded.Star else Icons.Rounded.RateReview, null,
+                tint = if (kind == "rating") StarColor else PinedrawColors.Lime, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (entries.isEmpty()) title else "$title (${entries.size})", style = MaterialTheme.typography.titleMedium)
         }
+        if (entries.isEmpty()) Text(emptyText, style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+        entries.forEach { entry ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                InitialsAvatar(entry.entrantName, size = 36.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(entry.entrantName, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        formatReservationDate(entry.date),
+                        color = PinedrawColors.TextMuted, style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(entry.text, style = MaterialTheme.typography.bodyMedium,
+                        color = if (kind == "rating") StarColor else PinedrawColors.Text)
+                }
+                if (onRemove != null) PinedrawButton(
+                    if (removingId == entry.id) "Removing…" else "Remove",
+                    onClick = { confirming = entry }, enabled = removingId == null,
+                    style = ButtonStyle.SoftDestructive, compact = true
+                )
+            }
+        }
+        if (message.isNotEmpty()) Text(message, style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
     }
 
     confirming?.let { entry ->
-        AlertDialog(
-            onDismissRequest = { confirming = null },
-            title = { Text("Remove ${entry.entrantName}'s $kind?") },
-            text = {
-                Text(
-                    if (kind == "rating") "The campsite's average rating will be updated. This cannot be undone."
-                    else "It will no longer appear on the campsite. This cannot be undone."
-                )
-            },
-            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } },
-            confirmButton = {
-                TextButton(onClick = { confirming = null; onRemove?.invoke(entry) }) {
-                    Text("Yes, remove", color = PinedrawColors.Coral)
-                }
-            }
+        PinedrawDialog(
+            title = "Remove ${entry.entrantName}'s $kind?",
+            message = if (kind == "rating") "The campsite's average rating will be updated. This cannot be undone."
+                else "It will no longer appear on the campsite. This cannot be undone.",
+            icon = Icons.Rounded.DeleteOutline,
+            iconTint = PinedrawColors.Coral,
+            confirmText = "Yes, remove",
+            confirmStyle = ButtonStyle.Destructive,
+            onDismiss = { confirming = null },
+            onConfirm = { confirming = null; onRemove?.invoke(entry) }
         )
     }
 }

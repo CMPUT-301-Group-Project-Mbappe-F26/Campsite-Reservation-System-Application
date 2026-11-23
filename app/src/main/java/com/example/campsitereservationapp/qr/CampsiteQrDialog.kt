@@ -6,6 +6,22 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.QrCode2
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,32 +55,32 @@ fun CampsiteQrDialog(
 
     AlertDialog(
         onDismissRequest = onClose,
+        containerColor = PinedrawColors.Surface,
+        shape = PinedrawRadius.XLarge,
+        icon = { Icon(Icons.Rounded.QrCode2, null, tint = PinedrawColors.Lime, modifier = Modifier.size(32.dp)) },
         title = {
-            Text("Campsite QR Code")
+            Text("Campsite QR Code", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         },
         text = {
-            Column {
-                Text(campsiteName)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text(campsiteName, style = MaterialTheme.typography.titleMedium, color = PinedrawColors.Text, textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(16.dp))
-                // Display the QR code if generated successfully
                 if (qrCode != null) {
                     Image(
                         bitmap = qrCode.asImageBitmap(),
                         contentDescription = "QR code for $campsiteName",
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().clip(PinedrawRadius.Large).background(Color.White).padding(12.dp)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text("Scan this QR code to view the campsite.")
+                    Text("Scan this QR code to view the campsite.", style = MaterialTheme.typography.bodyMedium,
+                        color = PinedrawColors.TextSecondary, textAlign = TextAlign.Center)
                 } else {
-                    // Show an error if QR code not generated
-                    Text("Could not generate QR code.")
+                    InlineMessage("Could not generate QR code.")
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onClose) {
-                Text("Close")
-            }
+            PinedrawButton("Close", onClose, Modifier.fillMaxWidth(), style = ButtonStyle.Ghost, compact = true)
         }
     )
 }
