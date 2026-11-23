@@ -45,8 +45,6 @@ fun AdminProfilesScreen(
     onProfileClick: (String) -> Unit
 ) {
     val userService = remember { UserService() }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var rows by remember { mutableStateOf<List<User>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }

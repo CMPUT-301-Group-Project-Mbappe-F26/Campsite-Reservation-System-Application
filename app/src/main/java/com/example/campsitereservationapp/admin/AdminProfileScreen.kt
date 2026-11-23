@@ -90,7 +90,7 @@ fun AdminProfileScreen(
                 TextButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Admin Dashboard")
+                    Text("All profiles")
                 }
                 TextButton(onClick = { refresh++ }, enabled = !loading && removingId == null) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -109,7 +109,7 @@ fun AdminProfileScreen(
                 }
                 else -> Column {
                     Text(text = when {
-                        user.name != "" -> "Username: ${user.name}"
+                        user.name != "" -> user.name
                         else -> "(No username)"
                         },
                         fontWeight = FontWeight.Bold,
