@@ -11,8 +11,27 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.EventBusy
+import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.ui.text.style.TextAlign
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.CircleIconButton
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InfoRow
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.PinedrawTopBar
+import com.example.campsitereservationapp.ui.components.StatusChip
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,6 +57,7 @@ import com.example.campsitereservationapp.model.reservationStatusLabel
 import com.example.campsitereservationapp.notification.reservationCsv
 import com.example.campsitereservationapp.notification.writeReservationCsv
 import com.example.campsitereservationapp.service.CampsiteService
+import com.example.campsitereservationapp.messaging.canMessageOwner
 import com.example.campsitereservationapp.service.ReservationService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.CancellationException
@@ -128,32 +148,27 @@ fun ReservationDetailsScreen(reservationId: String, onBack: () -> Unit, onOpenMe
         }
     }
 
-    Column(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
-            .statusBarsPadding().navigationBarsPadding()
-    ) {
-        TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("My Reservations")
-        }
-        when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PinedrawColors.Lime)
-            }
-            error.isNotEmpty() -> Column(Modifier.padding(24.dp)) {
-                Text(error, color = PinedrawColors.Coral)
-                TextButton(onClick = { refresh++ }) { Text("Try again") }
-            }
-            else -> reservation?.let { booking ->
-                val canCancel = cancelError(booking, entrantId.orEmpty(), reservationDateToday()) == null
-                ReservationDetailsContent(
-                    booking, campsite, onOpenMessages,
-                    onCancel = if (canCancel) ::cancelReservation else null,
-                    cancelling = cancelling, cancelMessage = cancelMessage,
-                    onBackToTrips = onBack
-                )
+    PinedrawBackground {
+        Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+            when {
+                loading -> Column(Modifier.statusBarsPadding()) {
+                    PinedrawTopBar("Reservation", onBack = onBack, backLabel = "My trips")
+                    LoadingState()
+                }
+                error.isNotEmpty() -> Column(Modifier.statusBarsPadding()) {
+                    PinedrawTopBar("Reservation", onBack = onBack, backLabel = "My trips")
+                    ErrorState(error, onRetry = { refresh++ })
+                }
+                else -> reservation?.let { booking ->
+                    val canCancel = cancelError(booking, entrantId.orEmpty(), reservationDateToday()) == null
+                    ReservationDetailsContent(
+                        booking, campsite, onOpenMessages,
+                        onCancel = if (canCancel) ::cancelReservation else null,
+                        cancelling = cancelling, cancelMessage = cancelMessage,
+                        onBackToTrips = onBack,
+                        onBack = onBack
+                    )
+                }
             }
         }
     }
@@ -183,7 +198,8 @@ fun ReservationDetailsContent(
     cancelMessage: String = "",
     today: String = reservationDateToday(),
     onBackToTrips: () -> Unit = {},
-    onDownloadCsv: ((String) -> Unit)? = null
+    onDownloadCsv: ((String) -> Unit)? = null,
+    onBack: (() -> Unit)? = null
 ) {
     if (booking.status == RESERVATION_CANCELLED) {
         CancellationConfirmation(booking, site, onBackToTrips, onDownloadCsv)
@@ -198,38 +214,67 @@ fun ReservationDetailsContent(
     }
 
     Column(Modifier.verticalScroll(rememberScrollState())) {
-        CampsitePhoto(site?.imageUrls?.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            Text(booking.campsiteName.ifBlank { site?.name ?: "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
-            Surface(color = statusColor.copy(alpha = 0.15f), shape = MaterialTheme.shapes.large) {
-                Text(status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = statusColor, fontWeight = FontWeight.Bold)
+        Box(Modifier.fillMaxWidth().height(280.dp)) {
+            CampsitePhoto(site?.imageUrls?.firstOrNull(), Modifier.matchParentSize(), seed = booking.campsiteId, shape = null)
+            Box(
+                Modifier.matchParentSize().background(
+                    Brush.verticalGradient(
+                        0f to PinedrawColors.Background.copy(alpha = 0.45f),
+                        0.3f to Color.Transparent,
+                        0.7f to Color.Transparent,
+                        1f to PinedrawColors.Background
+                    )
+                )
+            )
+            if (onBack != null) CircleIconButton(
+                Icons.AutoMirrored.Rounded.ArrowBack, "My trips", onBack,
+                container = PinedrawColors.Background.copy(alpha = 0.6f),
+                modifier = Modifier.statusBarsPadding().padding(PinedrawSpacing.Large)
+            )
+        }
+        Column(
+            Modifier.padding(horizontal = PinedrawSpacing.Gutter).padding(bottom = PinedrawSpacing.Screen),
+            verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Gutter)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)) {
+                Text(booking.campsiteName.ifBlank { site?.name ?: "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
+                StatusChip(status, color = statusColor)
             }
-            if (onOpenMessages != null) {
-                OutlinedButton(onClick = onOpenMessages, modifier = Modifier.fillMaxWidth()) {
-                    Text("Message campsite owner")
+            GlassCard {
+                Row(Modifier.fillMaxWidth()) {
+                    DateBlock("Check-in", formatReservationDate(booking.checkInDate), Modifier.weight(1f))
+                    DateBlock("Check-out", formatReservationDate(booking.checkOutDate), Modifier.weight(1f))
                 }
+                HorizontalDivider(color = PinedrawColors.Border)
+                InfoRow("Location", site?.location?.ifBlank { null } ?: "Not available")
             }
-            ReservationCard {
-                ReservationRow("Check-in", formatReservationDate(booking.checkInDate))
-                ReservationRow("Check-out", formatReservationDate(booking.checkOutDate))
-                ReservationRow("Location", site?.location?.ifBlank { null } ?: "Not available")
+            if (onOpenMessages != null && canMessageOwner(booking)) {
+                PinedrawButton(
+                    "Message owner", onOpenMessages, Modifier.fillMaxWidth(),
+                    style = ButtonStyle.Secondary, icon = Icons.AutoMirrored.Rounded.Chat, enabled = !cancelling
+                )
             }
-            if (site != null) ReservationCard {
-                Text("Rules for entrants", style = MaterialTheme.typography.titleLarge)
-                Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
-                ReservationRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
+            if (site != null) GlassCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Gavel, null, tint = PinedrawColors.Lime, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(PinedrawSpacing.Small))
+                    Text("Rules for entrants", style = MaterialTheme.typography.titleMedium)
+                }
+                Text(site.rules.ifBlank { "No additional rules provided." }, style = MaterialTheme.typography.bodyLarge, color = PinedrawColors.TextSecondary)
+                InfoRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
             }
             if (onCancel != null) {
-                OutlinedButton(
-                    onClick = { confirming = true }, enabled = !cancelling, modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PinedrawColors.Coral)
-                ) {
-                    Text(if (cancelling) "Cancelling…" else "Cancel reservation")
-                }
+                PinedrawButton(
+                    if (cancelling) "Cancelling…" else "Cancel reservation",
+                    onClick = { confirming = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    style = ButtonStyle.SoftDestructive,
+                    icon = Icons.Rounded.EventBusy,
+                    enabled = !cancelling
+                )
             }
             if (cancelMessage.isNotEmpty()) {
-                Text(
+                InlineMessage(
                     cancelMessage,
                     color = if (booking.status == RESERVATION_CANCELLED) PinedrawColors.TextSecondary else PinedrawColors.Coral
                 )
@@ -238,25 +283,27 @@ fun ReservationDetailsContent(
     }
 
     if (confirming && onCancel != null) {
-        AlertDialog(
-            onDismissRequest = { confirming = false },
-            title = { Text("Cancel this reservation?") },
-            text = {
-                Text(
-                    "Your stay from ${formatReservationDate(booking.checkInDate)} to " +
-                        "${formatReservationDate(booking.checkOutDate)} will be released to other " +
-                        "entrants. This cannot be undone."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { confirming = false; onCancel() }) {
-                    Text("Yes, cancel", color = PinedrawColors.Coral)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirming = false }) { Text("Keep reservation") }
-            }
+        PinedrawDialog(
+            title = "Cancel this reservation?",
+            message = "Your stay from ${formatReservationDate(booking.checkInDate)} to " +
+                "${formatReservationDate(booking.checkOutDate)} will be released to other " +
+                "entrants. This cannot be undone.",
+            icon = Icons.Rounded.EventBusy,
+            iconTint = PinedrawColors.Coral,
+            dismissText = "Keep reservation",
+            confirmText = "Yes, cancel",
+            confirmStyle = ButtonStyle.Destructive,
+            onDismiss = { confirming = false },
+            onConfirm = { confirming = false; onCancel() }
         )
+    }
+}
+
+@Composable
+private fun DateBlock(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+        Text(value, style = MaterialTheme.typography.titleMedium, color = PinedrawColors.Text)
     }
 }
 
@@ -286,42 +333,45 @@ internal fun CancellationConfirmation(
     BackHandler(onBack = onBackToTrips)
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(PinedrawSpacing.Screen),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Box(Modifier.size(76.dp).background(PinedrawColors.Teal, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Check, contentDescription = null, tint = PinedrawColors.Background,
-                modifier = Modifier.size(42.dp))
+        Spacer(Modifier.height(PinedrawSpacing.Section))
+        Box(Modifier.size(88.dp).background(PinedrawColors.Teal.copy(alpha = 0.18f), CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(64.dp).background(PinedrawColors.Teal, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Check, contentDescription = null, tint = PinedrawColors.Ink, modifier = Modifier.size(36.dp))
+            }
         }
-        Text("Reservation cancelled", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Text("A cancellation confirmation is in your notifications.", color = PinedrawColors.TextSecondary)
+        Text("Reservation cancelled", style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
+        Text(
+            "A cancellation confirmation is in your notifications.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = PinedrawColors.TextSecondary,
+            textAlign = TextAlign.Center
+        )
         Card(
-            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F5EE), contentColor = PinedrawColors.Background)
+            modifier = Modifier.fillMaxWidth(), shape = PinedrawRadius.Large,
+            colors = CardDefaults.cardColors(containerColor = PinedrawColors.Text, contentColor = PinedrawColors.Ink)
         ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.padding(PinedrawSpacing.Gutter), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 CancellationRow("Reservation", booking.id)
                 CancellationRow("Campsite", booking.campsiteName.ifBlank { campsite.name })
                 CancellationRow("Dates", "${formatReservationDate(booking.checkInDate)} – ${formatReservationDate(booking.checkOutDate)}")
                 CancellationRow("Status", RESERVATION_CANCELLED)
             }
         }
-        OutlinedButton(
+        PinedrawButton(
+            "Download CSV confirmation",
             onClick = {
                 if (onDownloadCsv != null) onDownloadCsv(csv)
                 else fileLauncher.launch("cancellation.csv")
             },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = MaterialTheme.shapes.large
-        ) {
-            Text("Download CSV confirmation", fontWeight = FontWeight.Bold)
-        }
-        Button(
-            onClick = onBackToTrips,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = MaterialTheme.shapes.large
-        ) {
-            Text("Back to my trips", fontWeight = FontWeight.Bold)
-        }
+            modifier = Modifier.fillMaxWidth(),
+            style = ButtonStyle.Ghost,
+            icon = Icons.Rounded.Download
+        )
+        PinedrawButton("Back to my trips", onBackToTrips, Modifier.fillMaxWidth())
     }
 }
 
@@ -333,22 +383,3 @@ private fun CancellationRow(label: String, value: String) {
     }
 }
 
-// Groups reservation details inside a rounded card.
-@Composable
-private fun ReservationCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
-    }
-}
-
-// Shows one reservation label and its value.
-@Composable
-private fun ReservationRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, Modifier.weight(1f), color = PinedrawColors.TextSecondary)
-        Text(value, Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
-    }
-}

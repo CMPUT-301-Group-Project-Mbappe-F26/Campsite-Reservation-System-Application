@@ -1,26 +1,31 @@
 package com.example.campsitereservationapp.admin
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material3.*
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.IconBadge
+import com.example.campsitereservationapp.ui.components.PinedrawScreen
+import com.example.campsitereservationapp.ui.components.StatusChip
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
-
-/*
- * Admin Dashboard, the starting point for admin tools (US 03.04.01).
- *
- * Only shown to users whose profile has isAdmin set.
- */
+import com.example.campsitereservationapp.ui.theme.PinedrawDimens
 
 /**
  * Shows the admin tools the signed-in admin can open.
@@ -37,60 +42,32 @@ fun AdminDashboardScreen(
     onMessageLogsClick: (() -> Unit)? = null,
     onNotificationLogsClick: (() -> Unit)? = null
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    0f to Color(0xFF1E3A26),
-                    0.45f to PinedrawColors.Background,
-                    1f to PinedrawColors.Background
-                )
-            )
-            .statusBarsPadding()
-            .padding(20.dp)
-    ) {
-        TextButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Back to Profile", color = PinedrawColors.Lime)
-        }
-        Spacer(Modifier.height(24.dp))
+    PinedrawScreen(title = "Admin Dashboard", onBack = onBack, backLabel = "Back to Profile") {
+        StatusChip("Admin console", color = PinedrawColors.Coral, icon = Icons.Rounded.Shield)
+        Text("Moderation", style = MaterialTheme.typography.displayLarge, color = PinedrawColors.Text)
         Text(
-            text = "Admin Dashboard",
-            color = PinedrawColors.Text,
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Bold
+            "Review and moderate content across Pinedraw.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = PinedrawColors.TextSecondary
         )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = "Review and moderate content across Pinedraw.",
-            color = PinedrawColors.TextSecondary,
-            fontSize = 14.sp
-        )
-        Spacer(Modifier.height(32.dp))
-        Button(
-            onClick = onCampsitesClick,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = CircleShape,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = PinedrawColors.Lime,
-                contentColor = PinedrawColors.Ink
-            )
-        ) {
-            Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Campsites", fontWeight = FontWeight.Bold)
-        }
+        AdminAction("Campsites", "Browse every listing and remove ones that break policy.", Icons.Rounded.Cabin, PinedrawColors.Lime, onCampsitesClick)
         if (onMessageLogsClick != null) {
-            Spacer(Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = onMessageLogsClick,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = CircleShape
-            ) {
-                Text("Message Logs", fontWeight = FontWeight.Bold)
+            AdminAction("Message Logs", "Review conversations between owners and guests.", Icons.AutoMirrored.Rounded.Chat, PinedrawColors.Sky, onMessageLogsClick)
+        }
+    }
+}
+
+@Composable
+private fun AdminAction(title: String, description: String, icon: ImageVector, tint: Color, onClick: () -> Unit) {
+    GlassCard(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(icon, tint = tint, size = 52.dp)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleLarge, color = PinedrawColors.Text)
+                Text(description, style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
             }
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = PinedrawColors.TextMuted, modifier = Modifier.size(PinedrawDimens.IconSize))
         }
         if (onNotificationLogsClick != null) {
             Spacer(Modifier.height(16.dp))

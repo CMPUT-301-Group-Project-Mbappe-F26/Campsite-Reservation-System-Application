@@ -1,0 +1,31 @@
+// Merge fragment, not a standalone ruleset (US 01.14.01 / US 02.12.01).
+// Place inside /databases/{database}/documents, where the team already defines
+// isAdmin() and isVerifiedBooking(). Keep the verified lottery-booking check.
+// Replace any existing messages block for this path; do not keep a broader allow-write rule.
+
+match /reservations/{reservationId}/messages/{messageId} {
+  function booking() {
+    return get(/databases/$(database)/documents/reservations/$(reservationId)).data;
+  }
+  function ownerId() {
+    return get(/databases/$(database)/documents/campsites/$(booking().campsiteId)).data.ownerId;
+  }
+  function participant() {
+    return request.auth != null && (request.auth.uid == booking().entrantId || request.auth.uid == ownerId());
+  }
+  allow read: if participant() || isAdmin();
+  allow create: if participant()
+    && booking().id == reservationId && isVerifiedBooking(booking())
+    && (request.auth.uid == ownerId() || booking().status == 'Confirmed')
+    && request.resource.data.keys().hasOnly(['senderId', 'text', 'sentAt'])
+    && request.resource.data.senderId == request.auth.uid
+    && request.resource.data.text is string
+    && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000
+    && request.resource.data.text.matches('(?s).*[^\\s].*')
+    && request.resource.data.sentAt == request.time;
+  // Messages are append-only. Neither participant can edit or delete a transcript.
+}
+
+// Keep the team's existing admin-only collection-group read rule for message logs.
+// Admin access to logs does not grant permission to send messages as another person.
+// Parent reservation reads must remain limited to the booked entrant, its owner, and admins.

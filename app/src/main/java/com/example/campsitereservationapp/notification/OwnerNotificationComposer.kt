@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -22,6 +22,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.History
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.pinedrawFieldColors
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -67,32 +77,17 @@ internal fun OwnerNotificationComposer(
     }
 
     if (!editing) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = { editing = true },
-                modifier = Modifier.fillMaxWidth(),
-                shape = CircleShape
-            ) {
-                Text("Notify entrants", fontWeight = FontWeight.SemiBold)
-            }
-            TextButton(
-                onClick = { showingHistory = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Sent notifications")
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PinedrawButton("Notify entrants", { editing = true }, Modifier.weight(1f),
+                style = ButtonStyle.Ghost, icon = Icons.Rounded.Campaign, compact = true)
+            PinedrawButton("Sent notifications", { showingHistory = true }, Modifier.weight(1f),
+                style = ButtonStyle.Ghost, icon = Icons.Rounded.History, compact = true)
         }
         return
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = PinedrawColors.Surface,
-            contentColor = PinedrawColors.Text
-        )
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    GlassCard(container = PinedrawColors.Surface) {
+        run {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = ::closeForm,
@@ -103,7 +98,7 @@ internal fun OwnerNotificationComposer(
                         .background(PinedrawColors.Glass)
                         .testTag("closeNotification")
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel")
+                    Icon(Icons.Rounded.Close, contentDescription = "Cancel")
                 }
                 Spacer(Modifier.width(14.dp))
                 Text("New notification", style = MaterialTheme.typography.titleLarge)
@@ -120,11 +115,7 @@ internal fun OwnerNotificationComposer(
             }
 
             Text("Send to", style = MaterialTheme.typography.labelMedium, color = PinedrawColors.TextSecondary)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RecipientOption("Everyone", "$recipientCount entrants", true, Modifier.weight(1f))
-                RecipientOption("Winners", "After the draw", false, Modifier.weight(1f))
-                RecipientOption("Custom", "Pick people", false, Modifier.weight(1f))
-            }
+            RecipientOption("Everyone", "$recipientCount entrants on the waiting list", true, Modifier.fillMaxWidth())
 
             Text("Title", style = MaterialTheme.typography.labelMedium, color = PinedrawColors.TextSecondary)
             OutlinedTextField(
@@ -132,6 +123,8 @@ internal fun OwnerNotificationComposer(
                 onValueChange = { title = it.take(MAX_NOTIFICATION_TITLE); error = "" },
                 enabled = !sending,
                 singleLine = true,
+                shape = PinedrawRadius.Medium,
+                colors = pinedrawFieldColors(),
                 modifier = Modifier.fillMaxWidth().testTag("notificationTitle")
             )
 
@@ -141,6 +134,8 @@ internal fun OwnerNotificationComposer(
                 onValueChange = { message = it.take(MAX_NOTIFICATION_MESSAGE); error = "" },
                 enabled = !sending,
                 minLines = 4,
+                shape = PinedrawRadius.Medium,
+                colors = pinedrawFieldColors(),
                 supportingText = { Text("${message.length} / $MAX_NOTIFICATION_MESSAGE") },
                 modifier = Modifier.fillMaxWidth().testTag("notificationMessage")
             )
@@ -148,36 +143,29 @@ internal fun OwnerNotificationComposer(
             Text("Preview", style = MaterialTheme.typography.labelMedium, color = PinedrawColors.TextSecondary)
             NotificationPreview(title, message)
 
-            if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
-            Button(
+            InlineMessage(error)
+            val entrants = if (recipientCount == 1) "entrant" else "entrants"
+            PinedrawButton(
+                if (sending) "Sending..." else "Send to $recipientCount $entrants",
                 onClick = {
                     val validationError = ownerNotificationError(title, message, recipientCount)
                     if (validationError == null) confirming = true else error = validationError
                 },
                 enabled = !sending,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PinedrawColors.Lime,
-                    contentColor = PinedrawColors.Ink
-                )
-            ) {
-                val entrants = if (recipientCount == 1) "entrant" else "entrants"
-                Text(
-                    if (sending) "Sending..." else "Send to $recipientCount $entrants",
-                    fontWeight = FontWeight.Bold
-                )
-            }
+                loading = sending,
+                icon = Icons.AutoMirrored.Rounded.Send,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 
-    if (confirming) AlertDialog(
-        onDismissRequest = { confirming = false },
-        title = { Text("Are you sure?") },
-        text = { Text("Send this notification to everyone in the waiting list?") },
-        dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
-        confirmButton = {
-            TextButton(onClick = {
+    if (confirming) PinedrawDialog(
+        title = "Are you sure?",
+        message = "Send this notification to everyone in the waiting list?",
+        icon = Icons.Rounded.Campaign,
+        confirmText = "Proceed",
+        onDismiss = { confirming = false },
+        onConfirm = {
                 confirming = false
                 sending = true
                 error = ""
@@ -200,8 +188,7 @@ internal fun OwnerNotificationComposer(
                         sending = false
                     }
                 }
-            }) { Text("Proceed") }
-        }
+            }
     )
 }
 
