@@ -28,12 +28,14 @@ import com.example.campsitereservationapp.ui.theme.PinedrawColors
  * @param onBack Goes back to the previous screen.
  * @param onCampsitesClick Opens the campsite management screen.
  * @param onMessageLogsClick Opens the owner message logs.
+ * @param onNotificationLogsClick Opens the notification audit log.
  */
 @Composable
 fun AdminDashboardScreen(
     onBack: () -> Unit,
     onCampsitesClick: () -> Unit,
-    onMessageLogsClick: (() -> Unit)? = null
+    onMessageLogsClick: (() -> Unit)? = null,
+    onNotificationLogsClick: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -88,6 +90,16 @@ fun AdminDashboardScreen(
                 shape = CircleShape
             ) {
                 Text("Message Logs", fontWeight = FontWeight.Bold)
+            }
+        }
+        if (onNotificationLogsClick != null) {
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = onNotificationLogsClick,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = CircleShape
+            ) {
+                Text("Notification Logs", fontWeight = FontWeight.Bold)
             }
         }
     }
