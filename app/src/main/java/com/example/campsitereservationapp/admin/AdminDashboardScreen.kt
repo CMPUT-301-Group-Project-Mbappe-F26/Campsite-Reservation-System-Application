@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +55,9 @@ fun AdminDashboardScreen(
         if (onMessageLogsClick != null) {
             AdminAction("Message Logs", "Review conversations between owners and guests.", Icons.AutoMirrored.Rounded.Chat, PinedrawColors.Sky, onMessageLogsClick)
         }
+        if (onNotificationLogsClick != null) {
+            AdminAction("Notification Logs", "Review all sent notifications.", Icons.Rounded.Notifications, PinedrawColors.Amber, onNotificationLogsClick)
+        }
     }
 }
 
@@ -68,16 +72,6 @@ private fun AdminAction(title: String, description: String, icon: ImageVector, t
                 Text(description, style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
             }
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = PinedrawColors.TextMuted, modifier = Modifier.size(PinedrawDimens.IconSize))
-        }
-        if (onNotificationLogsClick != null) {
-            Spacer(Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = onNotificationLogsClick,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = CircleShape
-            ) {
-                Text("Notification Logs", fontWeight = FontWeight.Bold)
-            }
         }
     }
 }

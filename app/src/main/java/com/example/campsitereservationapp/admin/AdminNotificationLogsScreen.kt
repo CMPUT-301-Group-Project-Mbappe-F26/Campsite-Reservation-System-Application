@@ -1,25 +1,40 @@
 package com.example.campsitereservationapp.admin
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.notification.AdminNotificationLog
 import com.example.campsitereservationapp.notification.AdminNotificationLogService
 import com.example.campsitereservationapp.notification.NotificationLogType
 import com.example.campsitereservationapp.notification.filterNotificationLogs
+import com.example.campsitereservationapp.ui.components.EmptyState
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.PinedrawScreen
+import com.example.campsitereservationapp.ui.components.PinedrawTextField
+import com.example.campsitereservationapp.ui.components.SelectChip
+import com.example.campsitereservationapp.ui.components.StatusChip
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
@@ -50,43 +65,18 @@ internal fun AdminNotificationLogsScreen(
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    0f to MaterialTheme.colorScheme.surfaceBright,
-                    0.60f to PinedrawColors.Background
-                )
-            )
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    PinedrawScreen(
+        title = "Notification logs",
+        onBack = onBack,
+        backLabel = "Back to Admin Dashboard",
+        scrollable = false,
+        modifier = Modifier.imePadding()
     ) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
-            FilledTonalIconButton(
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.CenterStart),
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = PinedrawColors.Glass,
-                    contentColor = PinedrawColors.Text
-                )
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to Admin Dashboard")
-            }
-            Text("Notification logs", style = MaterialTheme.typography.headlineLarge)
-        }
-
-        OutlinedTextField(
+        PinedrawTextField(
             value = search,
             onValueChange = { search = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search title, sender or recipient") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            singleLine = true,
-            shape = CircleShape
+            placeholder = "Search title, sender or recipient",
+            leadingIcon = Icons.Rounded.Search
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -101,23 +91,12 @@ internal fun AdminNotificationLogsScreen(
 
         val visibleLogs = logs?.let { filterNotificationLogs(it, search, selectedType) }
         when {
-            failed -> {
-                Text("Could not load notification logs.", color = PinedrawColors.Coral)
-                TextButton(onClick = { refresh++ }) { Text("Try again") }
-            }
-            visibleLogs == null -> Box(
-                Modifier.fillMaxWidth().padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(color = PinedrawColors.Lime)
-            }
-            visibleLogs.isEmpty() -> Text(
-                "No notifications found",
-                color = PinedrawColors.TextSecondary
-            )
+            failed -> ErrorState("Could not load notification logs.", onRetry = { refresh++ })
+            visibleLogs == null -> LoadingState()
+            visibleLogs.isEmpty() -> EmptyState(Icons.Rounded.Notifications, "No notifications found")
             else -> LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 items(visibleLogs, key = { it.id }) { NotificationLogCard(it) }
             }
@@ -127,10 +106,10 @@ internal fun AdminNotificationLogsScreen(
 
 @Composable
 private fun NotificationTypeChip(text: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(
+    SelectChip(
+        text = text,
         selected = selected,
-        onClick = onClick,
-        label = { Text(text) }
+        onClick = onClick
     )
 }
 
@@ -146,24 +125,17 @@ private fun NotificationLogCard(log: AdminNotificationLog) {
         else -> "${log.recipients.size} entrants"
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Surface)
-    ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    if (log.type == NotificationLogType.SYSTEM) "SYSTEM" else "OWNER",
-                    color = PinedrawColors.Lime,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(date, color = PinedrawColors.TextMuted, style = MaterialTheme.typography.bodySmall)
-            }
-            Text(log.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("${log.sender} → $recipientText", color = PinedrawColors.TextSecondary)
-            Text(log.message, color = PinedrawColors.Text)
-            Text(log.campsite, color = PinedrawColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+    GlassCard(spacing = 6.dp) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            StatusChip(
+                if (log.type == NotificationLogType.SYSTEM) "SYSTEM" else "OWNER",
+                color = if (log.type == NotificationLogType.SYSTEM) PinedrawColors.Lime else PinedrawColors.Amber
+            )
+            Text(date, color = PinedrawColors.TextMuted, style = MaterialTheme.typography.bodySmall)
         }
+        Text(log.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("${log.sender} → $recipientText", color = PinedrawColors.TextSecondary)
+        Text(log.message, color = PinedrawColors.Text)
+        Text(log.campsite, color = PinedrawColors.TextMuted, style = MaterialTheme.typography.bodySmall)
     }
 }
