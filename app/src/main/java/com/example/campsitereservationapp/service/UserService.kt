@@ -110,6 +110,92 @@ class UserService(
         }
     }
 
+    // Used by admins to remove the entrant's waiting-list entries and cancels active bookings,
+    // then deleting the profile.
+    suspend fun adminDeleteProfile(uid: String) {
+        // This function should exist but its implementation should not be
+        // directly within the Kotlin code; commented out for now
+//        val users = db.collection("users")
+//
+//        val lotteries = db.collection("lotteries")
+//        val reservations = db.collection("reservations")
+//        val today = reservationDateToday()
+//
+//        val reservationRefs = reservations
+//            .whereEqualTo("entrantId", uid)
+//            .get(Source.SERVER)
+//            .await()
+//            .documents
+//            .filter {
+//                val reservation = it.toObject(Reservation::class.java)
+//                reservation != null &&
+//                        activeReservations(listOf(reservation), today).isNotEmpty()
+//            }
+//            .map { it.reference }
+//
+//        val lotteryIds = listOf("registered", "pending").flatMap { field ->
+//            lotteries.whereArrayContains(field, uid)
+//                .get(Source.SERVER)
+//                .await()
+//                .documents
+//                .map { it.id }
+//        }
+//
+//        db.runTransaction { transaction ->
+//            val active = reservationRefs.mapNotNull { ref ->
+//                transaction.get(ref).toObject(Reservation::class.java)
+//                    ?.copy(id = ref.id)
+//            }.let {
+//                activeReservations(
+//                    it.filter { reservation -> reservation.entrantId == uid },
+//                    today
+//                )
+//            }
+//
+//            val affectedLotteries = (lotteryIds + active.map { it.lotteryId }
+//                .filter { it.isNotBlank() })
+//                .distinct()
+//                .mapNotNull { id ->
+//                    val ref = lotteries.document(id)
+//                    transaction.get(ref).toObject(Lottery::class.java)
+//                        ?.let { ref to it }
+//                }
+//
+//            for (reservation in active) {
+//                transaction.update(
+//                    reservations.document(reservation.id),
+//                    "status",
+//                    RESERVATION_CANCELLED
+//                )
+//            }
+//
+//            val bookedLotteryIds = active.map { it.lotteryId }.toSet()
+//
+//            for ((ref, lottery) in affectedLotteries) {
+//                val changes = mutableMapOf<String, Any>(
+//                    "registered" to lottery.registered.filterNot { it == uid },
+//                    "registeredGroupSizes" to (lottery.registeredGroupSizes - uid),
+//                    "pending" to lottery.pending.filterNot { it == uid }
+//                )
+//
+//                // Release the entrant's spots without letting clients rewrite other bookings.
+//                if (ref.id in bookedLotteryIds && uid !in lottery.cancelledEntrantIds) {
+//                    changes["cancelledEntrantIds"] =
+//                        lottery.cancelledEntrantIds + uid
+//                }
+//
+//                transaction.update(ref, changes)
+//            }
+//
+//            Unit
+//        }.await()
+//
+//        db.runTransaction { transaction ->
+//            transaction.delete(users.document(uid))
+//            Unit
+//        }.await()
+    }
+
     /**
      * Loads the profiles for a list of user IDs.
      *

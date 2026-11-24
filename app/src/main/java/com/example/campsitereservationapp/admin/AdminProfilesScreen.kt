@@ -37,7 +37,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Loads all profiles for the admin and removes one after the admin confirms.
  *
  * @param onBack Goes back to the previous screen.
- * @param onProfileClick Opens the selected campsite.
+ * @param onProfileClick Opens the selected user.
  */
 @Composable
 fun AdminProfilesScreen(
@@ -45,11 +45,14 @@ fun AdminProfilesScreen(
     onProfileClick: (String) -> Unit
 ) {
     val userService = remember { UserService() }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var rows by remember { mutableStateOf<List<User>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var removingId by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
+    var confirming by remember { mutableStateOf<User?>(null) }
 
     LaunchedEffect(Unit) {
         loading = true
@@ -119,35 +122,88 @@ fun AdminProfilesScreen(
                                     modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
                                     colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(16.dp)
-                                    ) {
-                                        Text(text = when {
+                                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(text = when {
                                                 user.name != "" -> "Username: ${user.name}"
                                                 else -> "No username"
                                             },
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(text = when {
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(text = when {
                                                 user.email != "" -> "Email: ${user.email}"
                                                 else -> "No registered email"
-                                        },
-                                            color = PinedrawColors.TextSecondary
-                                        )
-                                        Text(
-                                            text = when {
-                                                user.isAdmin -> "Admin"
-                                                user.isOwner -> "Campsite Owner"
-                                                else -> "Entrant"
                                             },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = PinedrawColors.TextSecondary
-                                        )
+                                                color = PinedrawColors.TextSecondary
+                                            )
+                                            Text(
+                                                text = when {
+                                                    user.isAdmin -> "Admin"
+                                                    user.isOwner -> "Campsite Owner"
+                                                    else -> "Entrant"
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = PinedrawColors.TextSecondary
+                                            )
+                                        }
+
+                                        TextButton(onClick = { confirming = user }, enabled = removingId == null) {
+                                            Text(if (removingId == user.id) "Removing..." else "Remove", color = PinedrawColors.Coral,
+                                                fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
                             }
                         }
+
+                    confirming?.let { user ->
+                        AlertDialog(
+                            onDismissRequest = { confirming = null },
+                            title = { if (user.name != "") {Text("Remove ${user.name}?")} else {Text("Remove user?")} },
+                            text = { Text("This user will be removed. They will be taken off all waiting lists and their active reservations will be cancelled.") },
+                            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    confirming = null
+                                    removingId = user.id
+                                    scope.launch {
+                                        val message = try {
+                                            val removed = withTimeoutOrNull(20000) { userService.adminDeleteProfile(user.id) }
+                                            if (removed == null) {
+                                                if (user.name != "") {
+                                                "Could not remove ${user.name}. Please try again."
+                                                }
+                                                else {
+                                                    "Could not remove user. Please try again."
+                                                }
+                                            }
+                                            else {
+                                                rows = rows.filter { it.id != user.id }
+                                                if (user.name != "") {
+                                                    "${user.name} was removed"
+                                                }
+                                                else {
+                                                    "User was removed"
+                                                }
+                                            }
+                                        } catch (_: Exception) {
+                                            coroutineContext.ensureActive() // Stop normally when leaving the screen.
+                                            if (user.name != "") {
+                                                "Could not remove ${user.name}. Please try again."
+                                            }
+                                            else {
+                                                "Could not remove user. Please try again."
+                                            }
+                                        } finally {
+                                            removingId = null
+                                        }
+                                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                    }
+                                }) { Text("Remove", color = PinedrawColors.Coral) }
+                            }
+                        )
                     }
+                }
             }
         }
     }

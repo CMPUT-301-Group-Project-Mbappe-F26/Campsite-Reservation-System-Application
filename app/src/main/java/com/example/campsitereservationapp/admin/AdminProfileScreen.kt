@@ -121,12 +121,11 @@ fun AdminProfileScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(text = "Account information", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(6.dp))
                     Card(
                         modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = "ID",
@@ -170,12 +169,11 @@ fun AdminProfileScreen(
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(text = "Personal information", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(6.dp))
                     Card(
                         modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = "Email",
@@ -189,7 +187,7 @@ fun AdminProfileScreen(
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Phone number",
+                                    text = "Phone",
                                     color = PinedrawColors.TextSecondary,
                                     modifier = Modifier.width(100.dp)
                                 )
