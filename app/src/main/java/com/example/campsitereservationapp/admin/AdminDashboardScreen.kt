@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,12 +34,14 @@ import com.example.campsitereservationapp.ui.theme.PinedrawDimens
  * @param onBack Goes back to the previous screen.
  * @param onCampsitesClick Opens the campsite management screen.
  * @param onMessageLogsClick Opens the owner message logs.
+ * @param onNotificationLogsClick Opens the notification audit log.
  */
 @Composable
 fun AdminDashboardScreen(
     onBack: () -> Unit,
     onCampsitesClick: () -> Unit,
-    onMessageLogsClick: (() -> Unit)? = null
+    onMessageLogsClick: (() -> Unit)? = null,
+    onNotificationLogsClick: (() -> Unit)? = null
 ) {
     PinedrawScreen(title = "Admin Dashboard", onBack = onBack, backLabel = "Back to Profile") {
         StatusChip("Admin console", color = PinedrawColors.Coral, icon = Icons.Rounded.Shield)
@@ -51,6 +54,9 @@ fun AdminDashboardScreen(
         AdminAction("Campsites", "Browse every listing and remove ones that break policy.", Icons.Rounded.Cabin, PinedrawColors.Lime, onCampsitesClick)
         if (onMessageLogsClick != null) {
             AdminAction("Message Logs", "Review conversations between owners and guests.", Icons.AutoMirrored.Rounded.Chat, PinedrawColors.Sky, onMessageLogsClick)
+        }
+        if (onNotificationLogsClick != null) {
+            AdminAction("Notification Logs", "Review all sent notifications.", Icons.Rounded.Notifications, PinedrawColors.Amber, onNotificationLogsClick)
         }
     }
 }
