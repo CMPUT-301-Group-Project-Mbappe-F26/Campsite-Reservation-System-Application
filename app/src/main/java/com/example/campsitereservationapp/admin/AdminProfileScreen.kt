@@ -1,215 +1,164 @@
 package com.example.campsitereservationapp.admin
 
 import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.PersonRemove
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
 import com.example.campsitereservationapp.model.User
+import com.example.campsitereservationapp.profile.ProfileAvatar
 import com.example.campsitereservationapp.service.UserService
+import com.example.campsitereservationapp.service.adminCanRemoveProfile
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InfoRow
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.OverlineLabel
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawScreen
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-/*
- * Lets an admin browse all registered profiles (US 03.05.01), remove profiles (US 03.02.01),
- * and remove campsite owners (US 03.07.01).
- *
- * [AdminProfilesScreen] loads profiles and details from Firebase and handles removal.
- *
- * Outstanding issues: (insert issues here)
- */
-
 /**
- * Displays details of a given user.
+ * Shows one profile's details to an admin, with a Remove button unless it is the admin's own.
  *
- * @param userId The ID of the user whose details will be displayed.
- * @param onBack Goes back to the profiles screen.
+ * @param userId ID of the profile to show.
+ * @param onBack Goes back to the profile list.
+ * @param onRemoved Called after the profile is removed; defaults to going back.
  */
 @Composable
 fun AdminProfileScreen(
     userId: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onRemoved: () -> Unit = onBack
 ) {
     val userService = remember { UserService() }
-    var row by remember { mutableStateOf<List<User>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf("") }
-    var removingId by remember { mutableStateOf<String?>(null) }
+    val adminId = rememberCampsiteOwnerId().orEmpty()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var user by remember(userId) { mutableStateOf<User?>(null) }
+    var loading by remember(userId) { mutableStateOf(true) }
+    var error by remember(userId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
-    var user by remember {mutableStateOf(User("", "", "", "", "", false, false, false))}
+    var confirming by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(userId, refresh) {
         loading = true
         error = ""
-        row = emptyList()
         try {
-            val result = withTimeoutOrNull(20000) {
-                val user: List<User> = userService.getUsers(listOf(userId))
-                user
-            }
-            if (result == null) error = "Profile detail retrieval timed out."
-            else {
-                row = result
-                user = row[0]
+            val result = withTimeoutOrNull(20000) { userService.getUsers(listOf(userId)) }
+            when {
+                result == null -> error = "Could not load this profile. Please try again."
+                result.isEmpty() -> error = "This profile no longer exists."
+                else -> user = result.first()
             }
         } catch (_: Exception) {
             coroutineContext.ensureActive() // Stop normally when leaving the screen.
-            error = "Failed to retrieve profile details."
+            error = "Could not load this profile. Please try again."
         } finally {
             loading = false
         }
     }
-    if (loading) {
-        CircularProgressIndicator()
-    } else if (error.isNotEmpty()) {
-        Text(error)
-    } else if (row.isEmpty()) {
-        Text("No profile details found.")
-    } else {
-        Column(
-            Modifier.fillMaxSize()
-                .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
-                .statusBarsPadding().navigationBarsPadding().padding(horizontal = 20.dp)
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("All profiles")
-                }
-                TextButton(onClick = { refresh++ }, enabled = !loading && removingId == null) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Refresh")
-                }
-            }
 
-            when {
-                loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = PinedrawColors.Lime)
+    PinedrawScreen(title = "Profile", onBack = onBack, backLabel = "All profiles") {
+        val shown = user
+        when {
+            loading -> LoadingState()
+            error.isNotEmpty() -> ErrorState(error, onRetry = { refresh++ })
+            shown != null -> AdminProfileDetails(
+                user = shown,
+                canRemove = adminCanRemoveProfile(adminId, shown.id),
+                removing = removing,
+                onRemove = { confirming = true }
+            )
+        }
+    }
+
+    val target = user
+    if (confirming && target != null) RemoveProfileDialog(target, onDismiss = { confirming = false }, onConfirm = {
+        confirming = false
+        removing = true
+        scope.launch {
+            val name = profileName(target)
+            try {
+                val removed = withTimeoutOrNull(30000) { userService.adminDeleteProfile(target.id) }
+                if (removed == null) {
+                    Toast.makeText(context, "Removing $name timed out. Please try again.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "$name was removed.", Toast.LENGTH_LONG).show()
+                    onRemoved()
                 }
-                error.isNotEmpty() -> Column(Modifier.padding(vertical = 24.dp)) {
-                    Text(error, color = PinedrawColors.Coral)
-                    TextButton(onClick = { refresh++ }) { Text("Try again") }
-                }
-                else -> Column {
-                    Text(text = when {
-                        user.name != "" -> user.name
-                        else -> "(No username)"
-                        },
-                        fontWeight = FontWeight.Bold,
-                        fontStyle = when {
-                            user.name == "" -> FontStyle.Italic
-                            else -> FontStyle.Normal
-                        },
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(text = "Account information", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(6.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "ID",
-                                    color = PinedrawColors.TextSecondary,
-                                    modifier = Modifier.width(100.dp)
-                                )
-                                Text(
-                                    text = user.id
-                                )
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Role",
-                                    color = PinedrawColors.TextSecondary,
-                                    modifier = Modifier.width(100.dp)
-                                )
-                                Text(
-                                    text = when {
-                                        user.isAdmin -> "Admin"
-                                        user.isOwner -> "Campsite Owner"
-                                        else -> "Entrant"
-                                    }
-                                )
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Notifications",
-                                    color = PinedrawColors.TextSecondary,
-                                    modifier = Modifier.width(100.dp)
-                                )
-                                Text(
-                                    text = when {
-                                        user.notificationsEnabled -> "Enabled"
-                                        else -> "Disabled"
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(text = "Personal information", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(6.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Email",
-                                    color = PinedrawColors.TextSecondary,
-                                    modifier = Modifier.width(100.dp)
-                                )
-                                Text(
-                                    text = user.email
-                                )
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Phone",
-                                    color = PinedrawColors.TextSecondary,
-                                    modifier = Modifier.width(100.dp)
-                                )
-                                Text(
-                                    text = user.phone
-                                )
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "City",
-                                    color = PinedrawColors.TextSecondary,
-                                    modifier = Modifier.width(100.dp)
-                                )
-                                Text(
-                                    text = user.city
-                                )
-                            }
-                        }
-                    }
-                }
+            } catch (exception: Exception) {
+                coroutineContext.ensureActive()
+                Toast.makeText(context, profileRemovalError(name, exception), Toast.LENGTH_LONG).show()
+            } finally {
+                removing = false
             }
         }
+    })
+}
+
+/**
+ * Draws a profile's photo, role, account and contact details, and the Remove button.
+ *
+ * @param user The profile to show.
+ * @param canRemove False for the admin's own profile, which hides Remove.
+ * @param removing True while the profile is being removed.
+ * @param onRemove Asks to remove the profile.
+ */
+@Composable
+fun AdminProfileDetails(user: User, canRemove: Boolean, removing: Boolean, onRemove: () -> Unit) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ProfileAvatar(name = profileName(user), imageUrl = user.profileImageUrl, modifier = Modifier.size(96.dp))
+        Text(profileName(user), style = MaterialTheme.typography.headlineMedium, color = PinedrawColors.Text)
+        RoleChip(user)
+    }
+    OverlineLabel("Account")
+    GlassCard {
+        InfoRow("ID", user.id)
+        InfoRow("Notifications", if (user.notificationsEnabled) "On" else "Off")
+    }
+    OverlineLabel("Contact")
+    GlassCard {
+        InfoRow("Email", user.email.ifBlank { "Not provided" })
+        InfoRow("Phone", user.phone.ifBlank { "Not provided" })
+        InfoRow("City", user.city.ifBlank { "Not provided" })
+    }
+    if (canRemove) {
+        PinedrawButton(
+            if (removing) "Removing..." else "Remove profile",
+            onClick = onRemove,
+            modifier = Modifier.fillMaxWidth(),
+            style = ButtonStyle.SoftDestructive,
+            icon = Icons.Rounded.PersonRemove,
+            loading = removing
+        )
+    } else {
+        Text(
+            "This is your profile. You can't remove it from here.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = PinedrawColors.TextMuted
+        )
     }
 }

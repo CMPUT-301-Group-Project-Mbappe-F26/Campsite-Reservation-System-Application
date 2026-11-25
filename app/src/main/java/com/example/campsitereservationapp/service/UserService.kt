@@ -1,5 +1,7 @@
 package com.example.campsitereservationapp.service
 
+import android.util.Log
+
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.RESERVATION_CANCELLED
 import com.example.campsitereservationapp.model.Reservation
@@ -10,6 +12,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.tasks.await
 
@@ -132,90 +135,78 @@ class UserService(
         }
     }
 
-    // Used by admins to remove the entrant's waiting-list entries and cancels active bookings,
-    // then deleting the profile.
+    /**
+     * Removes another user's profile as an admin (US 03.02.01).
+     *
+     * The user is taken off every waiting list, their active reservations are cancelled and
+     * their spots released, then the profile and its photo are deleted. Their sign-in account
+     * cannot be deleted from the app, but [loadCurrentUser] signs them out because the profile
+     * is gone. Requires the admin rules in docs/admin-profiles.rules.
+     *
+     * @param uid ID of the profile to remove.
+     * @throws IllegalStateException If the caller is not an admin or tries to remove themselves.
+     */
     suspend fun adminDeleteProfile(uid: String) {
-        // This function should exist but its implementation should not be
-        // directly within the Kotlin code; commented out for now
-//        val users = db.collection("users")
-//
-//        val lotteries = db.collection("lotteries")
-//        val reservations = db.collection("reservations")
-//        val today = reservationDateToday()
-//
-//        val reservationRefs = reservations
-//            .whereEqualTo("entrantId", uid)
-//            .get(Source.SERVER)
-//            .await()
-//            .documents
-//            .filter {
-//                val reservation = it.toObject(Reservation::class.java)
-//                reservation != null &&
-//                        activeReservations(listOf(reservation), today).isNotEmpty()
-//            }
-//            .map { it.reference }
-//
-//        val lotteryIds = listOf("registered", "pending").flatMap { field ->
-//            lotteries.whereArrayContains(field, uid)
-//                .get(Source.SERVER)
-//                .await()
-//                .documents
-//                .map { it.id }
-//        }
-//
-//        db.runTransaction { transaction ->
-//            val active = reservationRefs.mapNotNull { ref ->
-//                transaction.get(ref).toObject(Reservation::class.java)
-//                    ?.copy(id = ref.id)
-//            }.let {
-//                activeReservations(
-//                    it.filter { reservation -> reservation.entrantId == uid },
-//                    today
-//                )
-//            }
-//
-//            val affectedLotteries = (lotteryIds + active.map { it.lotteryId }
-//                .filter { it.isNotBlank() })
-//                .distinct()
-//                .mapNotNull { id ->
-//                    val ref = lotteries.document(id)
-//                    transaction.get(ref).toObject(Lottery::class.java)
-//                        ?.let { ref to it }
-//                }
-//
-//            for (reservation in active) {
-//                transaction.update(
-//                    reservations.document(reservation.id),
-//                    "status",
-//                    RESERVATION_CANCELLED
-//                )
-//            }
-//
-//            val bookedLotteryIds = active.map { it.lotteryId }.toSet()
-//
-//            for ((ref, lottery) in affectedLotteries) {
-//                val changes = mutableMapOf<String, Any>(
-//                    "registered" to lottery.registered.filterNot { it == uid },
-//                    "registeredGroupSizes" to (lottery.registeredGroupSizes - uid),
-//                    "pending" to lottery.pending.filterNot { it == uid }
-//                )
-//
-//                // Release the entrant's spots without letting clients rewrite other bookings.
-//                if (ref.id in bookedLotteryIds && uid !in lottery.cancelledEntrantIds) {
-//                    changes["cancelledEntrantIds"] =
-//                        lottery.cancelledEntrantIds + uid
-//                }
-//
-//                transaction.update(ref, changes)
-//            }
-//
-//            Unit
-//        }.await()
-//
-//        db.runTransaction { transaction ->
-//            transaction.delete(users.document(uid))
-//            Unit
-//        }.await()
+        val adminId = auth.currentUser?.uid
+        check(!adminId.isNullOrBlank()) { "Please sign in again." }
+        check(adminCanRemoveProfile(adminId, uid)) { "You can't remove your own profile from this screen." }
+        val users = db.collection("users")
+        val admin = users.document(adminId).get(Source.SERVER).await().toObject(User::class.java)
+        check(admin?.isAdmin == true) { "Only admins can remove profiles." }
+        val profile = users.document(uid).get(Source.SERVER).await()
+        check(profile.exists()) { "This profile was already removed." }
+        val profileImagePath = profile.getString("profileImagePath").orEmpty()
+
+        val lotteries = db.collection("lotteries")
+        val reservations = db.collection("reservations")
+        val today = reservationDateToday()
+        val reservationRefs = reservations.whereEqualTo("entrantId", uid).get(Source.SERVER).await()
+            .documents.filter {
+                val reservation = it.toObject(Reservation::class.java)
+                reservation != null && activeReservations(listOf(reservation), today).isNotEmpty()
+            }.map { it.reference }
+        val lotteryIds = listOf("registered", "pending").flatMap { field ->
+            lotteries.whereArrayContains(field, uid).get(Source.SERVER).await().documents.map { it.id }
+        }
+
+        db.runTransaction { transaction ->
+            val active = reservationRefs.mapNotNull { ref ->
+                transaction.get(ref).toObject(Reservation::class.java)?.copy(id = ref.id)
+            }.let { activeReservations(it.filter { reservation -> reservation.entrantId == uid }, today) }
+            val affectedLotteries = (lotteryIds + active.map { it.lotteryId }.filter { it.isNotBlank() })
+                .distinct().mapNotNull { id ->
+                    val ref = lotteries.document(id)
+                    transaction.get(ref).toObject(Lottery::class.java)?.let { ref to it }
+                }
+
+            for (reservation in active) {
+                transaction.update(reservations.document(reservation.id), "status", RESERVATION_CANCELLED)
+            }
+            val bookedLotteryIds = active.map { it.lotteryId }.toSet()
+            for ((ref, lottery) in affectedLotteries) {
+                val changes = mutableMapOf<String, Any>(
+                    "registered" to lottery.registered.filterNot { it == uid },
+                    "registeredGroupSizes" to (lottery.registeredGroupSizes - uid),
+                    "pending" to lottery.pending.filterNot { it == uid }
+                )
+                // Release the removed user's booked spots so they can be drawn again.
+                if (ref.id in bookedLotteryIds && uid !in lottery.cancelledEntrantIds) {
+                    changes["cancelledEntrantIds"] = lottery.cancelledEntrantIds + uid
+                }
+                transaction.update(ref, changes)
+            }
+            transaction.delete(users.document(uid))
+            Unit
+        }.await()
+
+        // The profile is already gone, so a leftover photo must not turn this into a failure.
+        if (isOwnedProfileImagePath(uid, profileImagePath)) {
+            try {
+                FirebaseStorage.getInstance().reference.child(profileImagePath).delete().await()
+            } catch (_: Exception) {
+                Log.w("AdminProfiles", "Removed profile's photo could not be deleted.")
+            }
+        }
     }
 
     /**
@@ -248,3 +239,12 @@ class UserService(
             .documents.mapNotNull { doc -> doc.toObject(User::class.java)?.copy(id = doc.id) }
     }
 }
+
+/**
+ * Whether an admin may remove a profile from the admin screens: never their own.
+ *
+ * @param adminId ID of the signed-in admin.
+ * @param uid ID of the profile to remove.
+ */
+fun adminCanRemoveProfile(adminId: String, uid: String): Boolean =
+    adminId.isNotBlank() && uid.isNotBlank() && adminId != uid

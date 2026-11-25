@@ -1,0 +1,24 @@
+// MERGE FRAGMENTS, not a standalone ruleset (US 03.05.01 browse profiles, US 03.02.01 remove profiles).
+// Place inside the existing /databases/{database}/documents scope, which already defines isAdmin().
+//
+// Removing a profile (UserService.adminDeleteProfile) runs one transaction that:
+//   1. cancels the user's active reservations,
+//   2. takes the user off every lottery's registered/pending lists (lotteries already allow
+//      `update: if isAdmin()` in lottery-collaboration.rules),
+//   3. deletes users/{uid}.
+// The profile photo is then deleted from Storage (already allowed for admins in
+// profile-images.storage.rules).
+
+// An admin may only change a reservation's status to Cancelled.
+function apCancelsReservation() {
+  return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+    && request.resource.data.status == 'Cancelled';
+}
+
+// Inside the existing match /users/{userId} block:
+//   allow read: if isAdmin();                                   // browse all profiles
+//   allow delete: if isAdmin() && request.auth.uid != userId;   // never their own profile here
+//
+// Inside the existing match /reservations/{reservationId} block:
+//   allow read: if isAdmin();                                   // find the user's reservations
+//   allow update: if isAdmin() && apCancelsReservation();
