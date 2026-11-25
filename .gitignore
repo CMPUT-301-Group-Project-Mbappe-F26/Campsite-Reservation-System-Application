@@ -16,3 +16,4 @@
 local.properties
 node_modules/
 gha-creds-*.json
+google-services.json
