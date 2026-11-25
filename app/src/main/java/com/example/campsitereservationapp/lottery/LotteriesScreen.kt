@@ -223,7 +223,7 @@ fun JoinWaitingListDialog(
         GlassCard(spacing = 10.dp, contentPadding = 14.dp) {
             InfoRow("Draw", formatReservationDate(lottery.registrationEndDate))
             InfoRow(
-                "Booking window",
+                "Stay dates",
                 "${formatReservationDate(lottery.stayStartDate)} – ${formatReservationDate(lottery.stayEndDate)}"
             )
         }

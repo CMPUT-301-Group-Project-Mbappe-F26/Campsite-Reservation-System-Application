@@ -66,7 +66,6 @@ object PinedrawDimens {
     val IconSize = 22.dp
     val SmallIconSize = 18.dp
     val IconBadgeSize = 44.dp
-    val AvatarSize = 48.dp
     val CardPadding = 18.dp
     val BorderWidth = 1.dp
     val NavBarHeight = 68.dp
