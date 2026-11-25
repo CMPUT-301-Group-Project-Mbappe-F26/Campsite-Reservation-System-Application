@@ -10,6 +10,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Icon
@@ -35,13 +37,17 @@ import com.example.campsitereservationapp.ui.theme.PinedrawDimens
  * @param onCampsitesClick Opens the campsite management screen.
  * @param onMessageLogsClick Opens the owner message logs.
  * @param onNotificationLogsClick Opens the notification audit log.
+ * @param onProfilesClick Opens the profile management screen.
+ * @param onImagesClick Opens the uploaded images screen.
  */
 @Composable
 fun AdminDashboardScreen(
     onBack: () -> Unit,
     onCampsitesClick: () -> Unit,
     onMessageLogsClick: (() -> Unit)? = null,
-    onNotificationLogsClick: (() -> Unit)? = null
+    onNotificationLogsClick: (() -> Unit)? = null,
+    onProfilesClick: (() -> Unit)? = null,
+    onImagesClick: (() -> Unit)? = null
 ) {
     PinedrawScreen(title = "Admin Dashboard", onBack = onBack, backLabel = "Back to Profile") {
         StatusChip("Admin console", color = PinedrawColors.Coral, icon = Icons.Rounded.Shield)
@@ -52,6 +58,12 @@ fun AdminDashboardScreen(
             color = PinedrawColors.TextSecondary
         )
         AdminAction("Campsites", "Browse every listing and remove ones that break policy.", Icons.Rounded.Cabin, PinedrawColors.Lime, onCampsitesClick)
+        if (onProfilesClick != null) {
+            AdminAction("Profiles", "Browse every account and remove ones that break policy.", Icons.Rounded.Groups, PinedrawColors.Teal, onProfilesClick)
+        }
+        if (onImagesClick != null) {
+            AdminAction("Images", "Browse uploaded campsite and profile photos.", Icons.Rounded.Image, PinedrawColors.Coral, onImagesClick)
+        }
         if (onMessageLogsClick != null) {
             AdminAction("Message Logs", "Review conversations between owners and guests.", Icons.AutoMirrored.Rounded.Chat, PinedrawColors.Sky, onMessageLogsClick)
         }

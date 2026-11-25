@@ -34,7 +34,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.campsitereservationapp.admin.AdminCampsitesScreen
 import com.example.campsitereservationapp.admin.AdminDashboardScreen
+import com.example.campsitereservationapp.admin.AdminImagesScreen
 import com.example.campsitereservationapp.admin.AdminMessageLogsScreen
+import com.example.campsitereservationapp.admin.AdminProfileScreen
+import com.example.campsitereservationapp.admin.AdminProfilesScreen
 import com.example.campsitereservationapp.admin.AdminNotificationLogsScreen
 import com.example.campsitereservationapp.campsite.CreateCampsiteScreen
 import com.example.campsitereservationapp.campsite.CampsiteRegistrationViewModel
@@ -94,9 +97,12 @@ fun MainScreen(
     var reserveLotteryId by rememberSaveable { mutableStateOf<String?>(null) }
     var adminMode by rememberSaveable { mutableStateOf(false) }
     var showingAdminCampsites by rememberSaveable { mutableStateOf(false) }
+    var showingAdminProfiles by rememberSaveable { mutableStateOf(false) }
+    var showingAdminImages by rememberSaveable { mutableStateOf(false) }
     var showingMessageLogs by rememberSaveable { mutableStateOf(false) }
     var showingNotificationLogs by rememberSaveable { mutableStateOf(false) }
     var adminCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from the admin list
+    var adminProfileId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from the admin list
     val registration: CampsiteRegistrationViewModel = viewModel()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -132,7 +138,10 @@ fun MainScreen(
             showingNotificationLogs -> showingNotificationLogs = false
             showingMessageLogs -> showingMessageLogs = false
             adminCampsiteId != null -> adminCampsiteId = null
+            adminProfileId != null -> adminProfileId = null
             showingAdminCampsites -> showingAdminCampsites = false
+            showingAdminProfiles -> showingAdminProfiles = false
+            showingAdminImages -> showingAdminImages = false
             else -> adminMode = false
         }
     }
@@ -197,9 +206,20 @@ fun MainScreen(
                     onBack = { adminCampsiteId = null },
                     asAdmin = true
                 )
+                adminMode && adminProfileId != null -> AdminProfileScreen(
+                    userId = adminProfileId!!,
+                    onBack = { adminProfileId = null }
+                )
                 adminMode && showingAdminCampsites -> AdminCampsitesScreen(
                     onBack = { showingAdminCampsites = false },
                     onCampsiteClick = { adminCampsiteId = it }
+                )
+                adminMode && showingAdminProfiles -> AdminProfilesScreen(
+                    onBack = { showingAdminProfiles = false },
+                    onProfileClick = { adminProfileId = it }
+                )
+                adminMode && showingAdminImages -> AdminImagesScreen(
+                    onBack = { showingAdminImages = false }
                 )
                 adminMode && user.isAdmin && showingMessageLogs -> AdminMessageLogsScreen(
                     onBack = { showingMessageLogs = false }
@@ -211,7 +231,9 @@ fun MainScreen(
                     onBack = { adminMode = false },
                     onCampsitesClick = { showingAdminCampsites = true },
                     onMessageLogsClick = { if (user.isAdmin) showingMessageLogs = true },
-                    onNotificationLogsClick = { if (user.isAdmin) showingNotificationLogs = true }
+                    onNotificationLogsClick = { if (user.isAdmin) showingNotificationLogs = true },
+                    onProfilesClick = { if (user.isAdmin) showingAdminProfiles = true },
+                    onImagesClick = { if (user.isAdmin) showingAdminImages = true }
                 )
                 hostMode && campsiteId != null -> CampsiteDetailsScreen(
                     campsiteId = campsiteId!!,

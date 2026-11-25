@@ -1,0 +1,43 @@
+// MERGE FRAGMENTS, not a standalone ruleset (US 03.03.01: admin removes images).
+// The app unlinks the image in Firestore first, then deletes the file from Storage.
+
+// ---------------------------------------------------------------------------
+// Firestore: place inside the existing /databases/{database}/documents scope,
+// which already defines isAdmin().
+// ---------------------------------------------------------------------------
+
+// The only change is one or more photos taken out of imageUrls.
+function aiRemovesCampsitePhoto() {
+  return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['imageUrls'])
+    && request.resource.data.imageUrls.size() < resource.data.imageUrls.size()
+    && resource.data.imageUrls.hasAll(request.resource.data.imageUrls);
+}
+
+// The only change is clearing the profile photo.
+function aiClearsProfilePhoto() {
+  return request.resource.data.diff(resource.data).affectedKeys()
+      .hasOnly(['profileImageUrl', 'profileImagePath'])
+    && request.resource.data.profileImageUrl == ''
+    && request.resource.data.profileImagePath == '';
+}
+
+// Inside the existing match /campsites/{campsiteId} block:
+//   allow update: if isAdmin() && aiRemovesCampsitePhoto();
+//
+// Inside the existing match /users/{userId} block:
+//   allow update: if isAdmin() && aiClearsProfilePhoto();
+
+// ---------------------------------------------------------------------------
+// Storage: place inside the existing match /b/{bucket}/o scope (rules_version = '2').
+// Profile photos are already covered by profile-images.storage.rules.
+// ---------------------------------------------------------------------------
+
+function campsiteImageAdmin() {
+  return request.auth != null
+    && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+}
+
+// Add to the existing campsite photo rules:
+match /campsites/{ownerId}/{campsiteId}/{photoId} {
+  allow delete: if campsiteImageAdmin();
+}
