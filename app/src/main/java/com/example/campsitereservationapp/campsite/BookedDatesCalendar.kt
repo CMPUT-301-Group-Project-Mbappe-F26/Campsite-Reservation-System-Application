@@ -153,7 +153,7 @@ fun BookedDatesCalendar(booked: Map<String, String>, today: String) {
                             Modifier.weight(1f).aspectRatio(1f).clip(CircleShape)
                                 .background(
                                     when {
-                                        date == selected -> PinedrawColors.Lime
+                                        date != null && date == selected -> PinedrawColors.Lime
                                         isBooked -> PinedrawColors.Lime.copy(alpha = 0.35f)
                                         else -> Color.Transparent
                                     }

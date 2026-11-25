@@ -44,7 +44,7 @@ import com.example.campsitereservationapp.ui.components.IconBadge
 import com.example.campsitereservationapp.ui.components.LoadingState
 import com.example.campsitereservationapp.ui.components.PageHeader
 import com.example.campsitereservationapp.ui.components.PinedrawBackground
-import com.example.campsitereservationapp.ui.components.SceneImage
+import com.example.campsitereservationapp.campsite.CampsitePhoto
 import com.example.campsitereservationapp.ui.components.SegmentedTabs
 import com.example.campsitereservationapp.ui.components.StatusChip
 import com.example.campsitereservationapp.ui.theme.PinedrawRadius
@@ -93,6 +93,7 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
     var reservations by remember(entrantId) { mutableStateOf<List<Reservation>>(emptyList()) }
     var past by remember(entrantId) { mutableStateOf<List<Reservation>>(emptyList()) }
     var feedback by remember(entrantId) { mutableStateOf<StayFeedback?>(null) }
+    var photos by remember(entrantId) { mutableStateOf<Map<String, String>>(emptyMap()) } // Campsite ID to cover photo
     var loading by remember(entrantId) { mutableStateOf(true) }
     var error by remember(entrantId) { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
@@ -122,6 +123,16 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
             } catch (e: Exception) {
                 Log.w("MyReservations", "Could not load ratings and reviews", e)
                 null
+            }
+            // Trips still show a landscape when a campsite photo cannot be loaded.
+            photos = try {
+                (reservations + past).map { it.campsiteId }.distinct().filter { it.isNotBlank() }.mapNotNull { id ->
+                    campsiteService.getCampsite(id)?.imageUrls?.firstOrNull()?.let { id to it }
+                }.toMap()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptyMap()
             }
             // Reservations can still be shown if won lotteries cannot be loaded.
             wins = try {
@@ -156,6 +167,7 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
     MyReservationsContent(
         wins, reservations, loading, error, onRetry = { refresh++ }, onReservationClick, onReserveClick, past = past,
         feedback = feedback,
+        photos = photos,
         onRate = { stay, stars ->
             save("rating", stay) { feedbackService.rate(stay.id, stars) }.also { problem ->
                 if (problem == null) feedback = feedback?.let { it.copy(stars = it.stars + (stay.id to stars)) }
@@ -187,6 +199,7 @@ fun MyReservationsScreen(onReservationClick: (String) -> Unit, onReserveClick: (
  * @param feedback What the entrant has rated and reviewed, or null to hide those buttons.
  * @param onRate Saves a rating of a past stay; returns a message when it failed, or null.
  * @param onReview Saves a review of a past stay; returns a message when it failed, or null.
+ * @param photos Cover photo URL for each campsite ID; a landscape is shown when one is missing.
  */
 @Composable
 fun MyReservationsContent(
@@ -200,7 +213,8 @@ fun MyReservationsContent(
     past: List<Reservation> = emptyList(),
     feedback: StayFeedback? = null,
     onRate: suspend (Reservation, Int) -> String? = { _, _ -> null },
-    onReview: suspend (Reservation, String) -> String? = { _, _ -> null }
+    onReview: suspend (Reservation, String) -> String? = { _, _ -> null },
+    photos: Map<String, String> = emptyMap()
 ) {
     var showPast by rememberSaveable { mutableStateOf(false) }
     val shown = if (showPast) past else reservations
@@ -260,6 +274,7 @@ fun MyReservationsContent(
                 else -> items(shown, key = { it.id }) { reservation ->
                     TripCard(
                         reservation = reservation,
+                        photoUrl = photos[reservation.campsiteId],
                         past = showPast,
                         onClick = { onReservationClick(reservation.id) }
                     ) {
@@ -275,13 +290,17 @@ fun MyReservationsContent(
 @Composable
 private fun TripCard(
     reservation: Reservation,
+    photoUrl: String?,
     past: Boolean,
     onClick: () -> Unit,
     extra: @Composable () -> Unit
 ) {
     GlassCard(onClick = onClick, contentPadding = 12.dp) {
         Box(Modifier.fillMaxWidth().height(if (past) 110.dp else 160.dp)) {
-            SceneImage(reservation.campsiteId.ifBlank { reservation.campsiteName }, Modifier.matchParentSize().clip(PinedrawRadius.Medium))
+            CampsitePhoto(
+                photoUrl, Modifier.matchParentSize(),
+                seed = reservation.campsiteId.ifBlank { reservation.campsiteName }, shape = PinedrawRadius.Medium
+            )
             Box(Modifier.padding(10.dp)) {
                 // A past stay is still stored as Confirmed, so show that it is over.
                 StatusChip(

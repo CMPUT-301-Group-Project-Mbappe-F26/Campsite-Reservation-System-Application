@@ -329,16 +329,3 @@ fun InfoRow(label: String, value: String, modifier: Modifier = Modifier, valueCo
         )
     }
 }
-
-/** Compact statistic tile, e.g. "6 Trips". */
-@Composable
-fun StatTile(value: String, label: String, modifier: Modifier = Modifier, icon: ImageVector? = null, tint: Color = PinedrawColors.Lime) {
-    GlassCard(modifier = modifier, contentPadding = 14.dp, spacing = 2.dp, shape = PinedrawRadius.Medium) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(PinedrawDimens.SmallIconSize + 2.dp))
-            Spacer(Modifier.height(6.dp))
-        }
-        Text(value, style = MaterialTheme.typography.headlineSmall, color = PinedrawColors.Text, maxLines = 1)
-        Text(label, style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}

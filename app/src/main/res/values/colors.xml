@@ -2,7 +2,5 @@
 <!-- Pinedraw design system palette -->
 <resources>
     <color name="pd_bg">#06110B</color>
-    <color name="pd_surface">#11251A</color>
-    <color name="pd_text">#F1F5EE</color>
     <color name="pd_lime">#A3E05C</color>
 </resources>
