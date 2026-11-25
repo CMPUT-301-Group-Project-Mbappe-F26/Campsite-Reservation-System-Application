@@ -46,10 +46,29 @@ class UserService(
     }
 
     // Saves profile changes for the signed-in user.
-    suspend fun updateUser(user: User) {
+    suspend fun updateUser(user: User): User {
         val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
         require(user.id == uid)
-        db.collection("users").document(uid).set(user).await() // Update profile
+        val document = db.collection("users").document(uid)
+        return db.runTransaction { transaction ->
+            check(auth.currentUser?.uid == uid) { "Your account changed. Please try again." }
+            val latest = transaction.get(document).toObject(User::class.java)
+                ?: error("Your profile is unavailable. Please sign in again.")
+            // A stale personal-info draft must not restore a removed or replaced photo.
+            // Roles and fields managed by other features also remain unchanged.
+            val changes = mapOf(
+                "name" to user.name,
+                "email" to user.email,
+                "phone" to user.phone,
+                "city" to user.city,
+                "notificationsEnabled" to user.notificationsEnabled
+            )
+            transaction.update(document, changes)
+            latest.copy(
+                id = uid, name = user.name, email = user.email, phone = user.phone,
+                city = user.city, notificationsEnabled = user.notificationsEnabled
+            )
+        }.await()
     }
 
     // Removes the entrant's waiting-list entries and cancels active bookings before deleting the profile.
@@ -57,6 +76,8 @@ class UserService(
         val account = checkNotNull(auth.currentUser) { "Not signed in" }
         val uid = account.uid
         val users = db.collection("users")
+        val profileImagePath = users.document(uid).get(Source.SERVER).await()
+            .getString("profileImagePath").orEmpty()
         val lotteries = db.collection("lotteries")
         val reservations = db.collection("reservations")
         val today = reservationDateToday()
@@ -100,6 +121,7 @@ class UserService(
             Unit
         }.await()
 
+        ProfileImageService(auth, db).deleteUnusedImage(uid, profileImagePath)
         // Firestore cleanup must run while the entrant is still authenticated.
         try {
             account.delete().await()

@@ -2,6 +2,7 @@ package com.example.campsitereservationapp.campsite
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.example.campsitereservationapp.qr.CampsiteQrDialog
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -12,9 +13,37 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Place
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.ConfirmationNumber
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.EditCalendar
+import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.QrCode2
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.CircleIconButton
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.IconBadge
+import com.example.campsitereservationapp.ui.components.InfoRow
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.PinedrawScreen
+import com.example.campsitereservationapp.ui.components.PinedrawTextField
+import com.example.campsitereservationapp.ui.components.StatusChip
+import com.example.campsitereservationapp.ui.components.amenityIcon
+import com.example.campsitereservationapp.ui.components.formatPrice
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,11 +57,19 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Shape
+import com.example.campsitereservationapp.ui.components.SceneImage
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.feedback.AdminRatingsSection
+import com.example.campsitereservationapp.feedback.CampsiteReviewsSection
+import com.example.campsitereservationapp.home.getRatingStars
+import com.example.campsitereservationapp.home.getRatingText
 import com.example.campsitereservationapp.model.Campsite
 import com.example.campsitereservationapp.model.Lottery
 import com.example.campsitereservationapp.model.formatReservationDate
 import com.example.campsitereservationapp.lottery.JoinWaitingListDialog
 import com.example.campsitereservationapp.lottery.LeaveWaitingListDialog
+import com.example.campsitereservationapp.notification.OwnerNotificationComposer
 import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.LotteryService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
@@ -48,11 +85,13 @@ import java.util.Locale
 
 /**
  * Loads a campsite and displays its details, with extra options for its owner.
- *
+ * Campsite owners can also generate a QR code to share their campsite.
  * Hides other users' unpublished campsites, except from admins. Create Lottery is shown to the owner and
  * opens [LotteryCreation] for the loaded campsite; closing that form returns here.
  * The owner also sees the current lottery's waiting list ([LotteryEntrantsSection]) and the
  * campsite's active, past and cancelled reservations ([CampsiteReservationsSection]).
+ * Everyone sees the campsite's reviews ([CampsiteReviewsSection]), and an admin can remove
+ * reviews and ratings ([AdminRatingsSection]).
  * Loading failures display an error with a retry action.
  *
  * @param campsiteId Firestore document ID of the campsite to load.
@@ -79,6 +118,7 @@ fun CampsiteDetailsScreen(
     val ownerId = rememberCampsiteOwnerId()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var showQrCode by rememberSaveable(campsiteId) { mutableStateOf(false) } // Keeps track of whether the QR code popup is open
     var campsite by remember(campsiteId, ownerId) { mutableStateOf<Campsite?>(null) }
     var lottery by remember(campsiteId, entrantId) { mutableStateOf<Lottery?>(null) }
     var loading by remember(campsiteId, ownerId) { mutableStateOf(true) }
@@ -87,6 +127,7 @@ fun CampsiteDetailsScreen(
     var creatingLottery by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
     var editingLotteryId by rememberSaveable(campsiteId, ownerId) { mutableStateOf<String?>(null) }
     var ownerLotteries by remember(campsiteId, ownerId) { mutableStateOf<List<Lottery>>(emptyList()) }
+    var currentOwnerLottery by remember(campsiteId, ownerId) { mutableStateOf<Lottery?>(null) }
     var editingCampsite by rememberSaveable(campsiteId, ownerId) { mutableStateOf(false) }
     var joining by rememberSaveable(campsiteId) { mutableStateOf(false) }
     var leaving by rememberSaveable(campsiteId) { mutableStateOf(false) }
@@ -96,6 +137,7 @@ fun CampsiteDetailsScreen(
         error = ""
         campsite = null
         lottery = null
+        currentOwnerLottery = null
         try {
             check(ownerId != null) { "Not signed in" }
             val result = withTimeoutOrNull(20000) { service.getCampsite(campsiteId) }
@@ -107,6 +149,8 @@ fun CampsiteDetailsScreen(
                 if (result.isOwnedBy(ownerId)) {
                     ownerLotteries = lotteryService.getLotteriesForCampsite(campsiteId)
                         .filter { it.ownerId == ownerId && !it.drawCompleted && it.pending.isEmpty() && it.booked.isEmpty() }
+                    currentOwnerLottery = lotteryService.getCurrentLottery(campsiteId)
+                        ?.takeIf { it.ownerId == ownerId }
                 }
                 if (entrantId != null && result.ownerId != entrantId) {
                     lottery = withTimeoutOrNull(20000) {
@@ -136,7 +180,19 @@ fun CampsiteDetailsScreen(
             lotteryStatus = "Could not load lottery information"
         }
     }
-
+    // Show the QR code for any published campsite
+    if (showQrCode) {
+        val currentCampsite = campsite
+        if (currentCampsite != null && currentCampsite.published) {
+            CampsiteQrDialog(
+                campsiteId = currentCampsite.id,
+                campsiteName = currentCampsite.name,
+                onClose = {
+                    showQrCode = false
+                }
+            )
+        }
+    }
     val ownedCampsite = campsite?.takeIf { ownerId != null && it.ownerId == ownerId }
     if (editingCampsite && ownedCampsite != null && onDeleted != null && !loading && error.isEmpty()) {
         EditOwnedCampsite(
@@ -166,173 +222,186 @@ fun CampsiteDetailsScreen(
         return
     }
 
-    Column(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
-            .statusBarsPadding().navigationBarsPadding()
-    ) {
-        TextButton(onClick = onBack, modifier = Modifier.padding(horizontal = 12.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(if (entrantId != null && !fromDiscover && !asAdmin) "Lotteries" else getCampsiteBackLabel(fromDiscover, asAdmin))
+    val ownerControls = campsite?.let { canShowOwnerControls(it, ownerId, fromDiscover || asAdmin || entrantId != null) } == true
+    val backLabel = if (entrantId != null && !fromDiscover && !asAdmin) "Lotteries" else getCampsiteBackLabel(fromDiscover, asAdmin)
+
+    when {
+        loading -> PinedrawScreen(title = "", onBack = onBack, backLabel = backLabel) { LoadingState() }
+        error.isNotEmpty() -> PinedrawScreen(title = "", onBack = onBack, backLabel = backLabel) {
+            ErrorState(error, onRetry = { refresh++ })
         }
-        when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PinedrawColors.Lime)
-            }
-            error.isNotEmpty() -> Column(Modifier.padding(24.dp)) {
-                Text(error, color = PinedrawColors.Coral)
-                TextButton(onClick = { refresh++ }) { Text("Try again") }
-            }
-            else -> campsite?.let { site ->
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    CampsitePhoto(site.imageUrls.firstOrNull(), Modifier.fillMaxWidth().height(230.dp))
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Text(site.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.headlineLarge)
-                        if (onDeleted != null && site.isOwnedBy(ownerId)) {
-                            OutlinedButton(
-                                onClick = { editingCampsite = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = CircleShape
-                            ) {
-                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Edit campsite", fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                        if (onMessageGuests != null && site.isOwnedBy(ownerId)) {
-                            OutlinedButton(onClick = onMessageGuests, modifier = Modifier.fillMaxWidth(), shape = CircleShape) {
-                                Text("Message guests", fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                        if (entrantId != null && lottery != null) LotteryDetailsActions(
-                            lottery = lottery!!,
-                            entrantId = entrantId,
-                            onJoin = { joining = true },
-                            onLeave = { leaving = true }
-                        )
-                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) Button(
-                            onClick = { creatingLottery = true },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                            shape = CircleShape,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = PinedrawColors.Lime,
-                                contentColor = PinedrawColors.Ink
-                            )
-                        ) {
-                            Text("Create Lottery", fontWeight = FontWeight.Bold)
-                        }
-                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) {
-                            ownerLotteries.forEach { current ->
-                                OutlinedButton(onClick = { editingLotteryId = current.id }, modifier = Modifier.fillMaxWidth()) {
-                                    Text("Edit lottery: ${current.registrationStartDate} – ${current.registrationEndDate}")
-                                }
-                            }
-                        }
-                        Surface(
-                            color = if (site.published) PinedrawColors.Lime.copy(alpha = 0.15f) else PinedrawColors.Glass,
-                            shape = MaterialTheme.shapes.large
-                        ) {
-                            Text(if (site.published) "Published" else "Draft", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                color = if (site.published) PinedrawColors.Lime else PinedrawColors.TextMuted,
-                                fontWeight = FontWeight.Bold)
-                        }
-                        Text("Overview", style = MaterialTheme.typography.titleLarge)
-                        HorizontalDivider(color = PinedrawColors.Amber)
-                        DetailCard {
-                            DetailRow("Location", site.location.ifBlank { "Not provided" })
-                            DetailRow("Coordinates", String.format(Locale.CANADA, "%.5f, %.5f", site.latitude, site.longitude))
-                            DetailRow("Max occupancy", site.maxOccupancy?.let { "$it guests" } ?: "No maximum")
-                            DetailRow("Price", String.format(Locale.CANADA, "$%.2f CAD / night", site.pricePerNight))
-
-                            if (site.averageRating != null) {  // Display campsite rating if available
-                                val rating = site.averageRating
-                                val fullStars = rating.toInt().coerceIn(0, 5)
-                                val stars = "\u2605".repeat(fullStars) + "\u2606".repeat(5 - fullStars)
-
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = stars,
-                                        color = Color(0xFFFFC107)
+        else -> campsite?.let { site ->
+            val entrantLottery = lottery.takeIf { entrantId != null }
+            PinedrawBackground {
+                Column(Modifier.fillMaxSize()) {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        Box(Modifier.fillMaxWidth().height(320.dp)) {
+                            CampsitePhoto(site.imageUrls.firstOrNull(), Modifier.matchParentSize(), seed = site.id, shape = null)
+                            Box(
+                                Modifier.matchParentSize().background(
+                                    Brush.verticalGradient(
+                                        0f to PinedrawColors.Background.copy(alpha = 0.45f),
+                                        0.3f to Color.Transparent,
+                                        0.75f to Color.Transparent,
+                                        1f to PinedrawColors.Background
                                     )
+                                )
+                            )
+                            Row(
+                                Modifier.fillMaxWidth().statusBarsPadding().padding(PinedrawSpacing.Large),
+                                horizontalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)
+                            ) {
+                                CircleIconButton(
+                                    Icons.AutoMirrored.Rounded.ArrowBack, backLabel, onBack,
+                                    container = PinedrawColors.Background.copy(alpha = 0.6f)
+                                )
+                                Spacer(Modifier.weight(1f))
+                                if (site.published) CircleIconButton(
+                                    Icons.Rounded.QrCode2, "Campsite QR code", { showQrCode = true },
+                                    container = PinedrawColors.Background.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                        Column(
+                            Modifier.padding(horizontal = PinedrawSpacing.Gutter),
+                            verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Gutter)
+                        ) {
+                            CampsiteHeading(site, showStatus = site.isOwnedBy(ownerId) || asAdmin)
+                            if (site.amenities.any { it.isNotBlank() }) AmenityRow(site.amenities)
 
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    // Rating
-                                    Text(text = "$rating / 5")
+                            if (entrantLottery != null) LotteryDetailsActions(entrantLottery, entrantId!!)
+
+                            if (site.isOwnedBy(ownerId) && (onDeleted != null || onMessageGuests != null || ownerControls)) {
+                                OwnerActions(
+                                    onEdit = if (onDeleted != null) ({ editingCampsite = true }) else null,
+                                    onQr = if (site.published) ({ showQrCode = true }) else null,
+                                    onMessageGuests = onMessageGuests,
+                                    onCreateLottery = if (ownerControls) ({ creatingLottery = true }) else null
+                                )
+                                if (ownerControls) ownerLotteries.forEach { current ->
+                                    PinedrawButton(
+                                        "Edit lottery: ${current.registrationStartDate} – ${current.registrationEndDate}",
+                                        onClick = { editingLotteryId = current.id },
+                                        style = ButtonStyle.Ghost,
+                                        icon = Icons.Rounded.EditCalendar,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
-                            } else {
-                                Text(  // No rating
-                                    text = "No ratings yet",
+                            }
+
+                            if (site.description.isNotBlank()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("About this campsite", style = MaterialTheme.typography.titleLarge)
+                                    Text(site.description, style = MaterialTheme.typography.bodyLarge, color = PinedrawColors.TextSecondary)
+                                }
+                            }
+
+                            DetailCard("Details", Icons.Rounded.Info) {
+                                DetailRow("Location", site.location.ifBlank { "Not provided" })
+                                DetailRow("Coordinates", String.format(Locale.CANADA, "%.5f, %.5f", site.latitude, site.longitude))
+                                DetailRow("Max occupancy", site.maxOccupancy?.let { if (it == 1) "1 guest" else "$it guests" } ?: "No maximum")
+                                DetailRow("Price", String.format(Locale.CANADA, "$%.2f CAD / night", site.pricePerNight))
+                                DetailRow("Rating", site.averageRating?.let { "${getRatingStars(it)}  ${getRatingText(it)}" } ?: "No ratings yet")
+                                if (site.tags.any { it.isNotBlank() }) DetailLabels(site.tags, "")
+                            }
+
+                            DetailCard("Lottery", Icons.Rounded.ConfirmationNumber) {
+                                StatusChip(
+                                    lotteryStatus,
+                                    color = if (openLottery != null) PinedrawColors.Lime else PinedrawColors.TextSecondary
+                                )
+                                openLottery?.let {
+                                    DetailRow("Registration opens", formatReservationDate(it.registrationStartDate))
+                                    DetailRow("Registration closes", formatReservationDate(it.registrationEndDate))
+                                }
+                            }
+
+                            if (ownerControls) LotteryEntrantsSection(site.id)
+                            if (ownerControls && currentOwnerLottery != null) {
+                                OwnerNotificationComposer(
+                                    campsiteId = site.id,
+                                    campsiteName = site.name.ifBlank { "this campsite" },
+                                    lottery = currentOwnerLottery!!
+                                )
+                            }
+                            if (ownerControls) LotteryCollaborationSection(site, refresh, onChanged = { refresh++ })
+                            if (ownerControls) CampsiteReservationsSection(site.id)
+
+                            if (site.imageUrls.size > 1) {
+                                Text("Photos", style = MaterialTheme.typography.titleLarge)
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(PinedrawSpacing.Medium)) {
+                                    itemsIndexed(site.imageUrls.drop(1)) { index, url ->
+                                        CampsitePhoto(url, Modifier.width(240.dp).height(160.dp), seed = site.id + index)
+                                    }
+                                }
+                            }
+
+                            DetailCard("Availability", Icons.Rounded.CalendarMonth) {
+                                val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                                val available = site.availableDays.distinct().sorted().mapNotNull { days.getOrNull(it - 1) }
+                                Text(
+                                    available.joinToString(" · ").ifBlank { "Every day" },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = PinedrawColors.Text
+                                )
+                                DetailRow("From", site.availableFrom.ifBlank { "Any date" })
+                                DetailRow("Until", site.availableUntil.ifBlank { "Any date" })
+                            }
+
+                            DetailCard("Rules for entrants", Icons.Rounded.Gavel) {
+                                Text(
+                                    site.rules.ifBlank { "No additional rules provided." },
+                                    style = MaterialTheme.typography.bodyLarge,
                                     color = PinedrawColors.TextSecondary
                                 )
-                            }
-                        }
-
-                        Text(  // Display lottery information
-                            text = "Lottery Information",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-
-                        DetailCard {  // Show whether registration is open
-                            Text(
-                                text = lotteryStatus,
-                                color = PinedrawColors.TextSecondary
-                            )
-
-                            if (openLottery != null) {  // Show registration dates if a lottery is open
-                                DetailRow(
-                                    "Registration starts",
-                                    openLottery!!.registrationStartDate
-                                )
-
-                                DetailRow(
-                                    "Registration ends",
-                                    openLottery!!.registrationEndDate
-                                )
-                            }
-                        }
-                        // Only the owner sees who has joined the waiting list
-                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) LotteryEntrantsSection(site.id)
-                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null))
-                            LotteryCollaborationSection(site, refresh, onChanged = { refresh++ })
-                        // Only the owner sees who has booked the campsite (US 02.07.01 to US 02.07.03)
-                        if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) CampsiteReservationsSection(site.id)
-
-                        DetailCard {
-                            Text("Description", style = MaterialTheme.typography.titleLarge)
-                            Text(site.description.ifBlank { "No description provided." }, color = PinedrawColors.TextSecondary)
-                            Text("Amenities", fontWeight = FontWeight.Bold)
-                            DetailLabels(site.amenities, "No amenities listed.")
-                            Text("Tags", fontWeight = FontWeight.Bold)
-                            DetailLabels(site.tags, "No tags listed.")
-                        }
-                        if (site.imageUrls.size > 1) {
-                            Text("Photos", style = MaterialTheme.typography.titleLarge)
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                itemsIndexed(site.imageUrls.drop(1)) { _, url ->
-                                    CampsitePhoto(url, Modifier.width(260.dp).height(180.dp))
+                                DetailRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
+                                if (site.requireRulesAcceptance) {
+                                    StatusChip("Entrants must accept the rules.", color = PinedrawColors.Amber, icon = Icons.Rounded.Gavel)
                                 }
+                                if (ownerControls) OwnerPolicyEditor(
+                                    campsiteId = site.id,
+                                    rules = site.rules,
+                                    onSaved = { campsite = site.copy(rules = it) }
+                                )
                             }
+
+                            CampsiteReviewsSection(site.id, asAdmin)
+                            if (asAdmin) AdminRatingsSection(site.id, onCampsiteChanged = { updated ->
+                                campsite = campsite?.copy(
+                                    averageRating = updated.averageRating, ratingCount = updated.ratingCount,
+                                    ratingTotal = updated.ratingTotal
+                                )
+                            })
+                            Spacer(Modifier.height(PinedrawSpacing.Large))
                         }
-                        DetailCard {
-                            Text("Availability", style = MaterialTheme.typography.titleLarge)
-                            val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-                            val available = site.availableDays.distinct().sorted().mapNotNull { days.getOrNull(it - 1) }
-                            Text(available.joinToString(" · ").ifBlank { "Availability not specified." }, color = PinedrawColors.TextSecondary)
-                            DetailRow("From", site.availableFrom.ifBlank { "Any date" })
-                            DetailRow("Until", site.availableUntil.ifBlank { "Any date" })
-                        }
-                        DetailCard {
-                            Text("Rules for entrants", style = MaterialTheme.typography.titleLarge)
-                            Text(site.rules.ifBlank { "No additional rules provided." }, color = PinedrawColors.TextSecondary)
-                            DetailRow("Cancellation policy", site.cancellationPolicy.ifBlank { "Not specified" })
-                            if (site.requireRulesAcceptance) Text("Entrants must accept the rules.", color = PinedrawColors.TextMuted)
-                            if (canShowOwnerControls(site, ownerId, fromDiscover || asAdmin || entrantId != null)) OwnerPolicyEditor(
-                                campsiteId = site.id,
-                                rules = site.rules,
-                                onSaved = { campsite = site.copy(rules = it) }
+                    }
+                    if (entrantLottery != null) {
+                        val entered = entrantId in entrantLottery.registered
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(PinedrawColors.Surface)
+                                .navigationBarsPadding()
+                                .padding(horizontal = PinedrawSpacing.Gutter, vertical = PinedrawSpacing.Medium),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.Bottom) {
+                                    Text(formatPrice(site.pricePerNight), style = MaterialTheme.typography.headlineMedium, color = PinedrawColors.Lime, maxLines = 1)
+                                    Text(" / night", style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+                                }
+                                Text("Free to enter", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextMuted)
+                            }
+                            if (entered) PinedrawButton(
+                                "Leave waiting list", { leaving = true },
+                                style = ButtonStyle.SoftDestructive, icon = Icons.AutoMirrored.Rounded.Logout
+                            ) else PinedrawButton(
+                                "Join lottery", { joining = true },
+                                icon = Icons.Rounded.ConfirmationNumber
                             )
                         }
+                    } else {
+                        Spacer(Modifier.navigationBarsPadding())
                     }
                 }
             }
@@ -434,42 +503,110 @@ private fun EditOwnedCampsite(
 }
 
 @Composable
-private fun LotteryDetailsActions(
-    lottery: Lottery,
-    entrantId: String,
-    onJoin: () -> Unit,
-    onLeave: () -> Unit
-) {
-    val entered = entrantId in lottery.registered
-    DetailCard {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Lottery", style = MaterialTheme.typography.titleLarge)
-            Text(if (entered) "Entered" else "Open", color = PinedrawColors.Lime)
+private fun CampsiteHeading(site: Campsite, showStatus: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                site.name.ifBlank { "Unnamed campsite" },
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.weight(1f)
+            )
+            site.averageRating?.let { rating ->
+                Row(
+                    Modifier.clip(PinedrawRadius.Pill).background(PinedrawColors.Glass).padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.Star, null, tint = PinedrawColors.Amber, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(String.format(Locale.CANADA, "%.1f", rating), style = MaterialTheme.typography.titleSmall)
+                    if (site.ratingCount > 0) Text(
+                        "  ${site.ratingCount}", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextMuted
+                    )
+                }
+            }
         }
-        DetailRow(
-            "Stay",
-            "${formatReservationDate(lottery.stayStartDate)} – ${formatReservationDate(lottery.stayEndDate)}"
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Place, null, tint = PinedrawColors.TextSecondary, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(site.location.ifBlank { "Location not provided" }, style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+        }
+        if (showStatus) {
+            StatusChip(
+                if (site.published) "Published" else "Draft",
+                color = if (site.published) PinedrawColors.Lime else PinedrawColors.TextMuted
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmenityRow(amenities: List<String>) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(PinedrawSpacing.Medium)) {
+        itemsIndexed(amenities.filter { it.isNotBlank() }) { _, amenity ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(68.dp)) {
+                Box(
+                    Modifier.size(56.dp).clip(CircleShape).background(PinedrawColors.Glass)
+                        .border(1.dp, PinedrawColors.Border, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { Icon(amenityIcon(amenity), null, tint = PinedrawColors.Text, modifier = Modifier.size(24.dp)) }
+                Spacer(Modifier.height(6.dp))
+                Text(amenity, style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OwnerActions(
+    onEdit: (() -> Unit)?,
+    onQr: (() -> Unit)?,
+    onMessageGuests: (() -> Unit)?,
+    onCreateLottery: (() -> Unit)?
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)) {
+        if (onCreateLottery != null) PinedrawButton(
+            "Create Lottery", onCreateLottery, Modifier.fillMaxWidth(), icon = Icons.Rounded.ConfirmationNumber
         )
+        val secondary = listOfNotNull(
+            onEdit?.let { Triple("Edit campsite", Icons.Rounded.Edit, it) },
+            onQr?.let { Triple("QR code", Icons.Rounded.QrCode2, it) },
+            onMessageGuests?.let { Triple("Message guests", Icons.AutoMirrored.Rounded.Chat, it) }
+        )
+        secondary.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)) {
+                row.forEach { (label, icon, action) ->
+                    PinedrawButton(label, action, Modifier.weight(1f), style = ButtonStyle.Ghost, icon = icon, compact = true)
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LotteryDetailsActions(lottery: Lottery, entrantId: String) {
+    val entered = entrantId in lottery.registered
+    GlassCard(borderColor = if (entered) PinedrawColors.Lime.copy(alpha = 0.5f) else PinedrawColors.Border) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(Icons.Rounded.ConfirmationNumber, filled = true)
+            Spacer(Modifier.width(PinedrawSpacing.Medium))
+            Column(Modifier.weight(1f)) {
+                Text("Lottery", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Stays ${formatReservationDate(lottery.stayStartDate)} – ${formatReservationDate(lottery.stayEndDate)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PinedrawColors.TextSecondary
+                )
+            }
+            StatusChip(if (entered) "Entered" else "Open")
+        }
+        DetailRow("Registration closes", formatReservationDate(lottery.registrationEndDate))
         if (entered) {
             Text(
-                lottery.registeredGroupSizes[entrantId]?.let { "Party of $it" } ?: "You're in the draw",
-                color = PinedrawColors.TextSecondary
+                lottery.registeredGroupSizes[entrantId]?.let { "You're in the draw · party of $it" } ?: "You're in the draw",
+                style = MaterialTheme.typography.bodyMedium,
+                color = PinedrawColors.Lime
             )
-            OutlinedButton(onClick = onLeave, modifier = Modifier.fillMaxWidth(), shape = CircleShape) {
-                Text("Leave waiting list")
-            }
-        } else {
-            Button(
-                onClick = onJoin,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PinedrawColors.Lime,
-                    contentColor = PinedrawColors.Ink
-                )
-            ) {
-                Text("Join lottery", fontWeight = FontWeight.Bold)
-            }
         }
     }
 }
@@ -506,39 +643,37 @@ internal fun OwnerPolicyEditor(
     var error by remember(campsiteId) { mutableStateOf("") }
 
     if (!editing) {
-        TextButton(onClick = {
-            draft = rules
-            error = ""
-            editing = true
-        }) { Text("Edit policy") }
+        PinedrawButton(
+            "Edit policy",
+            onClick = {
+                draft = rules
+                error = ""
+                editing = true
+            },
+            style = ButtonStyle.Ghost,
+            icon = Icons.Rounded.Edit,
+            compact = true
+        )
         return
     }
 
-    OutlinedTextField(
+    PinedrawTextField(
         value = draft, onValueChange = { draft = it }, enabled = !saving,
-        label = { Text("Rules for entrants") }, modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium, minLines = 4,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = PinedrawColors.Glass, unfocusedContainerColor = PinedrawColors.Glass,
-            unfocusedBorderColor = Color.White.copy(alpha = 0.08f)
-        )
+        label = "Rules for entrants", singleLine = false, minLines = 4
     )
-    if (error.isNotEmpty()) Text(error, color = PinedrawColors.Coral)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        TextButton(onClick = { editing = false }, enabled = !saving) { Text("Cancel") }
-        Spacer(Modifier.width(8.dp))
-        Button(onClick = { confirming = true }, enabled = !saving, shape = MaterialTheme.shapes.large) {
-            Text(if (saving) "Saving..." else "Save", fontWeight = FontWeight.Bold)
-        }
+    InlineMessage(error)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)) {
+        PinedrawButton("Cancel", { editing = false }, Modifier.weight(1f), style = ButtonStyle.Ghost, enabled = !saving, compact = true)
+        PinedrawButton(if (saving) "Saving..." else "Save", { confirming = true }, Modifier.weight(1f), enabled = !saving, compact = true)
     }
 
-    if (confirming) AlertDialog(
-        onDismissRequest = { confirming = false },
-        title = { Text("Are you sure?") },
-        text = { Text("Entrants will see this policy for your campsite.") },
-        dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
-        confirmButton = {
-            TextButton(onClick = {
+    if (confirming) PinedrawDialog(
+        title = "Are you sure?",
+        message = "Entrants will see this policy for your campsite.",
+        icon = Icons.Rounded.Gavel,
+        confirmText = "Proceed",
+        onDismiss = { confirming = false },
+        onConfirm = {
                 confirming = false
                 saving = true
                 error = ""
@@ -561,48 +696,49 @@ internal fun OwnerPolicyEditor(
                         saving = false
                     }
                 }
-            }) { Text("Proceed") }
-        }
+            }
     )
 }
 
-// Groups campsite details inside a rounded card.
+// Groups campsite details inside a titled glass card.
 @Composable
-private fun DetailCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+private fun DetailCard(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = PinedrawColors.Lime, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(PinedrawSpacing.Small))
+            Text(title, style = MaterialTheme.typography.titleMedium)
+        }
+        content()
     }
 }
 
 // Shows one campsite label and its value.
 @Composable
-private fun DetailRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, Modifier.weight(1f), color = PinedrawColors.TextSecondary)
-        Text(value, Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
-    }
-}
+private fun DetailRow(label: String, value: String) = InfoRow(label, value)
 
-// Shows amenities or tags, or a message when none are listed.
+// Shows amenities or tags as chips, or a message when none are listed.
 @Composable
 private fun DetailLabels(values: List<String>, emptyMessage: String) {
     val labels = values.filter { it.isNotBlank() }
-    if (labels.isEmpty()) Text(emptyMessage, color = PinedrawColors.TextMuted)
-    else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        labels.forEach { label ->
-            Surface(color = PinedrawColors.Surface, contentColor = PinedrawColors.Text, shape = MaterialTheme.shapes.medium) {
-                Text(label, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
-            }
-        }
+    if (labels.isEmpty()) {
+        if (emptyMessage.isNotBlank()) Text(emptyMessage, color = PinedrawColors.TextMuted)
+    } else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        labels.forEach { StatusChip(it, color = PinedrawColors.Sky, showDot = false) }
     }
 }
 
-// Loads a campsite photo or shows a placeholder.
+/**
+ * Loads a campsite photo. When there is no photo, or it can't be loaded, a landscape
+ * illustration chosen from [seed] is shown instead so cards never look empty.
+ */
 @Composable
-internal fun CampsitePhoto(url: String?, modifier: Modifier = Modifier) {
+internal fun CampsitePhoto(
+    url: String?,
+    modifier: Modifier = Modifier,
+    seed: String = url.orEmpty(),
+    shape: Shape? = PinedrawRadius.Large
+) {
     var loading by remember(url) { mutableStateOf(!url.isNullOrBlank()) }
     val bitmap by produceState<Bitmap?>(null, url) {
         value = null
@@ -643,16 +779,14 @@ internal fun CampsitePhoto(url: String?, modifier: Modifier = Modifier) {
         }
         loading = false
     }
-    Box(modifier.clip(MaterialTheme.shapes.large).background(PinedrawColors.Surface), contentAlignment = Alignment.Center) {
+    Box(
+        modifier.then(if (shape != null) Modifier.clip(shape) else Modifier).background(PinedrawColors.Surface),
+        contentAlignment = Alignment.Center
+    ) {
         when {
-            loading -> CircularProgressIndicator(Modifier.size(24.dp), color = PinedrawColors.Lime)
+            loading -> CircularProgressIndicator(Modifier.size(24.dp), color = PinedrawColors.Lime, strokeWidth = 2.dp)
             bitmap != null -> Image(bitmap!!.asImageBitmap(), "Campsite photo", Modifier.matchParentSize(), contentScale = ContentScale.Crop)
-            else -> Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Place, contentDescription = null, tint = PinedrawColors.TextMuted, modifier = Modifier.size(28.dp))
-                Spacer(Modifier.height(6.dp))
-                Text(if (url.isNullOrBlank()) "No photo" else "Photo unavailable",
-                    color = PinedrawColors.TextMuted, style = MaterialTheme.typography.bodySmall)
-            }
+            else -> SceneImage(seed, Modifier.matchParentSize())
         }
     }
 }

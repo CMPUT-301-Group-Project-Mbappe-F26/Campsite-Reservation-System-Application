@@ -17,12 +17,30 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.Save
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.CircleIconButton
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.InlineMessage
+import com.example.campsitereservationapp.ui.components.OverlineLabel
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.PinedrawTextButton
+import com.example.campsitereservationapp.ui.components.PinedrawTextField
+import com.example.campsitereservationapp.ui.components.SelectChip
+import com.example.campsitereservationapp.ui.components.amenityIcon
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,7 +68,9 @@ import java.util.Date
 import java.util.TimeZone
 import java.util.Locale
 
-// Collects campsite details in four steps before saving.
+/**
+ * Four-step wizard (basics, location, photos, rules) used to register or edit a campsite.
+ */
 @Composable
 fun CreateCampsiteScreen(
     saving: Boolean,
@@ -97,30 +117,25 @@ fun CreateCampsiteScreen(
         }
     }
 
+    PinedrawBackground {
     Column(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
-            .statusBarsPadding().navigationBarsPadding().imePadding().padding(horizontal = 20.dp)
+        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().padding(horizontal = PinedrawSpacing.Gutter)
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = goBack, enabled = !saving) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Back")
-            }
+        Row(Modifier.fillMaxWidth().padding(vertical = PinedrawSpacing.Small), verticalAlignment = Alignment.CenterVertically) {
+            CircleIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", goBack, enabled = !saving)
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(if (editing) "Edit campsite" else "New campsite", style = MaterialTheme.typography.titleLarge)
                 Text("Step ${step + 1} of 4", color = PinedrawColors.TextMuted, style = MaterialTheme.typography.labelMedium)
             }
-            TextButton(onClick = onCancel, enabled = !saving) { Text("Cancel") }
+            PinedrawTextButton("Cancel", onCancel, color = PinedrawColors.TextSecondary, enabled = !saving)
         }
-        Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(vertical = PinedrawSpacing.Medium), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             stepNames.forEachIndexed { index, title ->
                 Column(Modifier.weight(1f)) {
                     Text("${index + 1} $title", style = MaterialTheme.typography.labelMedium,
-                        color = if (index == step) PinedrawColors.Text else PinedrawColors.TextMuted)
+                        color = if (index == step) PinedrawColors.Lime else if (index < step) PinedrawColors.Text else PinedrawColors.TextMuted)
                     Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().height(3.dp).background(if (index <= step) PinedrawColors.Lime else PinedrawColors.Glass))
+                    Box(Modifier.fillMaxWidth().height(4.dp).clip(PinedrawRadius.Pill).background(if (index <= step) PinedrawColors.Lime else PinedrawColors.Glass))
                 }
             }
         }
@@ -131,7 +146,8 @@ fun CreateCampsiteScreen(
                     CampsiteField("Description & amenities", form.description, errors["description"], saving, multiline = true) {
                         form = form.copy(description = it)
                     }
-                    Text("${form.description.length} / 600", color = PinedrawColors.TextMuted, style = MaterialTheme.typography.labelMedium)
+                    Text("${form.description.length} / 600", color = PinedrawColors.TextMuted, style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.align(Alignment.End))
                     CampsiteField("Maximum occupancy (optional)", form.occupancy, errors["occupancy"], saving, KeyboardType.Number) {
                         form = form.copy(occupancy = it)
                     }
@@ -144,7 +160,10 @@ fun CreateCampsiteScreen(
                         form = form.copy(location = it)
                         locationMessage = ""
                     }
-                    OutlinedButton(enabled = !saving && !findingLocation && form.location.isNotBlank(), onClick = {
+                    PinedrawButton(
+                        if (findingLocation) "Finding location…" else "Find coordinates from address",
+                        modifier = Modifier.fillMaxWidth(), style = ButtonStyle.Ghost, icon = Icons.Rounded.MyLocation,
+                        enabled = !saving && !findingLocation && form.location.isNotBlank(), loading = findingLocation, onClick = {
                         findingLocation = true
                         locationMessage = ""
                         focus.clearFocus()
@@ -166,137 +185,143 @@ fun CreateCampsiteScreen(
                                 findingLocation = false
                             }
                         }
-                    }) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (findingLocation) "Finding location…" else "Find coordinates from address")
-                    }
-                    if (locationMessage.isNotEmpty()) Text(locationMessage, color = PinedrawColors.TextSecondary)
+                    })
+                    InlineMessage(locationMessage, color = PinedrawColors.Sky)
                     CampsiteField("Latitude (-90 to 90)", form.latitude, errors["latitude"], saving || findingLocation, KeyboardType.Text) { form = form.copy(latitude = it) }
                     CampsiteField("Longitude (-180 to 180)", form.longitude, errors["longitude"], saving || findingLocation, KeyboardType.Text) { form = form.copy(longitude = it) }
-                    Text("Use decimal degrees, including a minus sign for south or west. The coordinates locate the campsite on the map.", color = PinedrawColors.TextSecondary)
-                    OutlinedButton(enabled = !saving && form.errors(1).isEmpty(), onClick = {
+                    Text("Use decimal degrees, with a minus sign for south or west.", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+                    PinedrawButton("View location on map", modifier = Modifier.fillMaxWidth(), style = ButtonStyle.Ghost,
+                        icon = Icons.Rounded.Map, enabled = !saving && form.errors(1).isEmpty(), onClick = {
                         try {
                             val lat = form.latitude.toDouble()
                             val lon = form.longitude.toDouble()
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lon")))
                         } catch (_: ActivityNotFoundException) { locationMessage = "No map app or browser is available." }
-                    }) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("View location on map")
-                    }
+                    })
                 }
                 2 -> {
                     Text("Promo photos", style = MaterialTheme.typography.titleLarge)
-                    Text("Optional · up to 10 · first photo is the cover", color = PinedrawColors.TextMuted)
+                    Text("Optional · up to 10 · first photo is the cover", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextMuted)
                     form.photos.forEachIndexed { index, uri ->
-                        Card(colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass)) {
+                        GlassCard(contentPadding = 10.dp, spacing = 6.dp) {
                             if (Uri.parse(uri).scheme == "https") {
-                                CampsitePhoto(uri, Modifier.fillMaxWidth().height(180.dp))
+                                CampsitePhoto(uri, Modifier.fillMaxWidth().height(180.dp), shape = PinedrawRadius.Medium)
                             } else {
                                 PhotoPreview(uri)
                             }
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(if (index == 0) "Cover photo" else "Photo ${index + 1}", Modifier.weight(1f))
-                                TextButton(enabled = !saving, onClick = { form = form.copy(photos = form.photos - uri) }) { Text("Remove") }
+                            Row(Modifier.fillMaxWidth().padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(if (index == 0) "Cover photo" else "Photo ${index + 1}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                                PinedrawTextButton("Remove", { form = form.copy(photos = form.photos - uri) }, color = PinedrawColors.Coral, enabled = !saving)
                             }
                         }
                     }
-                    OutlinedButton(enabled = !saving && form.photos.size < 10, onClick = {
+                    PinedrawButton("Add photos (${form.photos.size}/10)", modifier = Modifier.fillMaxWidth(), style = ButtonStyle.Ghost,
+                        icon = Icons.Rounded.AddPhotoAlternate, enabled = !saving && form.photos.size < 10, onClick = {
                         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    }) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Add photos (${form.photos.size}/10)")
-                    }
+                    })
                     Text("Amenities", style = MaterialTheme.typography.titleLarge)
-                    (listOf("Cookhouse", "Tennis", "Fire pit", "Water", "Toilets", "Power", "Pets", "Wi-Fi") +
-                        original?.amenities.orEmpty()).distinct()
-                        .chunked(2).forEach { pair ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                pair.forEach { amenity ->
-                                    FilterChip(
-                                        selected = amenity in form.amenities, enabled = !saving,
-                                        modifier = Modifier.weight(1f), label = { Text(amenity) },
-                                        onClick = {
-                                            form = form.copy(amenities = if (amenity in form.amenities) form.amenities - amenity else form.amenities + amenity)
-                                        }
-                                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        (listOf("Cookhouse", "Tennis", "Fire pit", "Water", "Toilets", "Power", "Pets", "Wi-Fi") +
+                            original?.amenities.orEmpty()).distinct().forEach { amenity ->
+                            SelectChip(
+                                amenity, selected = amenity in form.amenities, enabled = !saving, icon = amenityIcon(amenity),
+                                onClick = {
+                                    form = form.copy(amenities = if (amenity in form.amenities) form.amenities - amenity else form.amenities + amenity)
                                 }
-                            }
+                            )
                         }
+                    }
                 }
                 3 -> {
                     Text("Availability", style = MaterialTheme.typography.titleLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("Every day" to (1..7).toList(), "Weekdays" to (1..5).toList(), "Weekends" to listOf(6, 7)).forEach { (label, days) ->
-                            FilterChip(selected = form.availableDays.sorted() == days, enabled = !saving,
-                                onClick = { form = form.copy(availableDays = days) }, label = { Text(label) })
+                            SelectChip(label, selected = form.availableDays.sorted() == days, enabled = !saving,
+                                onClick = { form = form.copy(availableDays = days) })
                         }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("M", "T", "W", "T", "F", "S", "S").forEachIndexed { index, day ->
-                            FilterChip(selected = index + 1 in form.availableDays, enabled = !saving,
-                                modifier = Modifier.weight(1f), label = { Text(day) }, onClick = {
-                                    val days = form.availableDays
-                                    form = form.copy(availableDays = if (index + 1 in days) days - (index + 1) else days + (index + 1))
-                                })
+                            val selected = index + 1 in form.availableDays
+                            Box(
+                                Modifier.weight(1f).aspectRatio(1f).clip(CircleShape)
+                                    .background(if (selected) PinedrawColors.Lime else PinedrawColors.Glass)
+                                    .clickable(enabled = !saving) {
+                                        val days = form.availableDays
+                                        form = form.copy(availableDays = if (index + 1 in days) days - (index + 1) else days + (index + 1))
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(day, style = MaterialTheme.typography.titleSmall, color = if (selected) PinedrawColors.Ink else PinedrawColors.Text)
+                            }
                         }
                     }
-                    Text("Optional season dates; leave blank for no date restriction.", color = PinedrawColors.TextSecondary)
+                    Text("Season dates (optional)", style = MaterialTheme.typography.titleMedium)
                     DateField("Available from", form.availableFrom, saving) { form = form.copy(availableFrom = it) }
                     DateField("Available until", form.availableUntil, saving) { form = form.copy(availableUntil = it) }
-                    errors["availability"]?.let { Text(it, color = PinedrawColors.Coral) }
+                    errors["availability"]?.let { InlineMessage(it) }
                     CampsiteField("Rules for entrants (optional)", form.rules, null, saving, multiline = true) { form = form.copy(rules = it) }
                     Text("Cancellation policy", style = MaterialTheme.typography.titleLarge)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("Flexible", "Moderate", "Strict").forEach { policy ->
-                            FilterChip(selected = form.cancellationPolicy == policy, enabled = !saving,
-                                onClick = { form = form.copy(cancellationPolicy = policy) }, label = { Text(policy) })
+                            SelectChip(policy, selected = form.cancellationPolicy == policy, enabled = !saving,
+                                onClick = { form = form.copy(cancellationPolicy = policy) })
                         }
                     }
                     Text(when (form.cancellationPolicy) {
                         "Flexible" -> "Full refund up to 1 day before check-in."
                         "Moderate" -> "Full refund up to 7 days before check-in."
                         else -> "Full refund up to 14 days before check-in."
-                    }, color = PinedrawColors.TextSecondary)
+                    }, style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
                     if (requiresRulesAcceptance) {
-                        Text("Entrants must accept the rules", fontWeight = FontWeight.Bold)
-                        Text("Always on for every reservation", color = PinedrawColors.TextMuted)
+                        GlassCard(spacing = 2.dp) {
+                            Text("Entrants must accept the rules", style = MaterialTheme.typography.titleSmall)
+                            Text("Always on for every reservation", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextMuted)
+                        }
                     }
-                    errors["policy"]?.let { Text(it, color = PinedrawColors.Coral) }
-                    if (!editing) Text("Ready to create: ${form.name}\n${form.location}\n${form.photos.size} photos · ${form.amenities.size} amenities", color = PinedrawColors.TextSecondary)
+                    errors["policy"]?.let { InlineMessage(it) }
+                    if (!editing) GlassCard(borderColor = PinedrawColors.Lime.copy(alpha = 0.4f), spacing = 4.dp) {
+                        OverlineLabel("Ready to create", color = PinedrawColors.Lime)
+                        Text(form.name.ifBlank { "Unnamed campsite" }, style = MaterialTheme.typography.titleMedium)
+                        Text(form.location, style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+                        Text("${form.photos.size} photos · ${form.amenities.size} amenities", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
         }
-        if (saveError.isNotEmpty()) Text(saveError, color = PinedrawColors.Coral)
+        InlineMessage(saveError)
         if (editing) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (onDelete != null) {
-                    TextButton(onClick = { confirmingDelete = true }, enabled = !saving) {
-                        Text("Delete campsite", color = if (saving) PinedrawColors.TextMuted else PinedrawColors.Coral)
-                    }
+                    PinedrawTextButton("Delete campsite", { confirmingDelete = true }, color = PinedrawColors.Coral,
+                        enabled = !saving, icon = Icons.Rounded.DeleteOutline)
                 }
                 Spacer(Modifier.weight(1f))
                 if (step < 3) {
-                    TextButton(onClick = {
+                    PinedrawTextButton("Save changes", onClick = {
                         focus.clearFocus()
                         val invalidStep = (0..3).firstOrNull { form.errors(it).isNotEmpty() }
                         if (invalidStep != null) {
                             step = invalidStep
                             showErrors = true
                         } else confirmingSave = true
-                    }, enabled = hasChanges && !saving && !findingLocation) {
-                        Text("Save changes")
-                    }
+                    }, enabled = hasChanges && !saving && !findingLocation)
                 }
             }
         }
         val canContinue = !saving && !findingLocation && (step < 3 || hasChanges)
-        Button(
+        PinedrawButton(
+            when {
+                saving -> if (editing) "Updating campsite…" else "Creating campsite…"
+                step < 3 -> "Continue to ${stepNames[step + 1].lowercase()}"
+                editing -> "Save changes"
+                else -> "Create campsite"
+            },
             enabled = canContinue,
+            loading = saving,
+            icon = if (step == 3) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.ArrowForward,
+            modifier = Modifier.fillMaxWidth().padding(vertical = PinedrawSpacing.Medium),
             onClick = {
                 focus.clearFocus()
                 showErrors = true
@@ -309,60 +334,34 @@ fun CreateCampsiteScreen(
                         else onCreate(form)
                     }
                 }
-            },
-            shape = CircleShape,
-            contentPadding = PaddingValues(0.dp),
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp).height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent)
-        ) {
-            Box(Modifier.fillMaxSize().background(if (canContinue) PinedrawColors.PrimaryGradient else Brush.horizontalGradient(listOf(PinedrawColors.Surface, PinedrawColors.Surface))), contentAlignment = Alignment.Center) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        when {
-                            saving -> if (editing) "Updating campsite…" else "Creating campsite…"
-                            step < 3 -> "Continue to ${stepNames[step + 1].lowercase()}"
-                            editing -> "Save changes"
-                            else -> "Create campsite"
-                        },
-                        color = if (canContinue) PinedrawColors.Ink else PinedrawColors.TextMuted,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (!saving) {
-                        Spacer(Modifier.width(8.dp))
-                        Icon(if (step == 3) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null, modifier = Modifier.size(20.dp),
-                            tint = if (canContinue) PinedrawColors.Ink else PinedrawColors.TextMuted)
-                    }
-                }
             }
-        }
+        )
     }
-    if (confirmingSave) AlertDialog(
-        onDismissRequest = { confirmingSave = false },
-        title = { Text("Save campsite changes?") },
-        text = { Text("Are you sure you want to update this campsite?") },
-        dismissButton = { TextButton(onClick = { confirmingSave = false }) { Text("Cancel") } },
-        confirmButton = {
-            Button(onClick = {
-                confirmingSave = false
-                onCreate(form)
-            }, enabled = !saving && hasChanges) { Text("Save changes") }
+    }
+    if (confirmingSave) PinedrawDialog(
+        title = "Save campsite changes?",
+        message = "Are you sure you want to update this campsite?",
+        icon = Icons.Rounded.Save,
+        confirmText = "Save changes",
+        confirmEnabled = !saving && hasChanges,
+        onDismiss = { confirmingSave = false },
+        onConfirm = {
+            confirmingSave = false
+            onCreate(form)
         }
     )
-    if (confirmingDelete && onDelete != null) AlertDialog(
-        onDismissRequest = { confirmingDelete = false },
-        title = { Text("Delete campsite?") },
-        text = { Text("Are you sure? This permanently removes the listing and closes its active lotteries. Existing reservations are kept.") },
-        dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") } },
-        confirmButton = {
-            Button(
-                onClick = {
-                    confirmingDelete = false
-                    onDelete()
-                },
-                enabled = !saving,
-                colors = ButtonDefaults.buttonColors(containerColor = PinedrawColors.Coral, contentColor = PinedrawColors.Ink)
-            ) { Text("Delete campsite") }
+    if (confirmingDelete && onDelete != null) PinedrawDialog(
+        title = "Delete campsite?",
+        message = "Are you sure? This permanently removes the listing and closes its active lotteries. Existing reservations are kept.",
+        icon = Icons.Rounded.DeleteOutline,
+        iconTint = PinedrawColors.Coral,
+        confirmText = "Delete campsite",
+        confirmStyle = ButtonStyle.Destructive,
+        confirmEnabled = !saving,
+        onDismiss = { confirmingDelete = false },
+        onConfirm = {
+            confirmingDelete = false
+            onDelete()
         }
     )
 }
@@ -374,16 +373,11 @@ private fun CampsiteField(
     keyboard: KeyboardType = KeyboardType.Text, multiline: Boolean = false,
     onChange: (String) -> Unit
 ) {
-    OutlinedTextField(
+    PinedrawTextField(
         value = value, onValueChange = onChange, enabled = !saving,
-        label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium, singleLine = !multiline, minLines = if (multiline) 4 else 1,
-        isError = error != null, supportingText = error?.let { { Text(it) } },
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = if (multiline) ImeAction.Default else ImeAction.Next),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = PinedrawColors.Glass, unfocusedContainerColor = PinedrawColors.Glass,
-            unfocusedBorderColor = Color.White.copy(alpha = 0.08f)
-        )
+        label = label, singleLine = !multiline, minLines = if (multiline) 4 else 1,
+        isError = error != null, supportingText = error,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = if (multiline) ImeAction.Default else ImeAction.Next)
     )
 }
 
@@ -396,15 +390,9 @@ private fun DateField(label: String, value: String, saving: Boolean, onChange: (
         SimpleDateFormat("yyyy-MM-dd", Locale.CANADA).apply { timeZone = TimeZone.getTimeZone("UTC") }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(
-            enabled = !saving, modifier = Modifier.weight(1f),
-            onClick = { picking = true }
-        ) {
-            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("$label: ${value.ifBlank { "Any date" }}")
-        }
-        if (value.isNotBlank()) TextButton(enabled = !saving, onClick = { onChange("") }) { Text("Clear") }
+        PinedrawButton("$label: ${value.ifBlank { "Any date" }}", { picking = true }, Modifier.weight(1f),
+            style = ButtonStyle.Ghost, icon = Icons.Rounded.CalendarMonth, enabled = !saving)
+        if (value.isNotBlank()) PinedrawTextButton("Clear", { onChange("") }, color = PinedrawColors.TextSecondary, enabled = !saving)
     }
     if (picking) {
         val dateState = rememberDatePickerState(

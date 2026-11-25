@@ -3,35 +3,74 @@ package com.example.campsitereservationapp.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import com.example.campsitereservationapp.model.User
-import com.example.campsitereservationapp.ui.theme.PinedrawColors
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import com.example.campsitereservationapp.campsite.CampsitePhoto
 import com.example.campsitereservationapp.model.Campsite
+import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.service.CampsiteService
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.runtime.DisposableEffect
+import com.example.campsitereservationapp.ui.components.EmptyState
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.formatPrice
+import com.example.campsitereservationapp.ui.components.InitialsAvatar
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.PinedrawBackground
+import com.example.campsitereservationapp.ui.components.PinedrawTextField
+import com.example.campsitereservationapp.ui.components.SectionHeader
+import com.example.campsitereservationapp.ui.components.StatusChip
+import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
+import java.util.Calendar
+import java.util.Locale
 
-// Shows the welcome screen and profile shortcut.
 /**
  * Displays the Discover screen where users can browse and search campsites.
  *
  * Loads published campsites from Firebase and shows their basic information.
- * Users can search by name or location and open a campsite to see its details.
+ * Users can search by name or location, filter the list and open a campsite.
  *
  * @param user The currently signed-in user.
  * @param onProfileClick Opens the user's profile.
@@ -43,194 +82,318 @@ import androidx.compose.runtime.DisposableEffect
 fun HomeScreen(
     user: User,
     onProfileClick: () -> Unit,
-    onCampsiteClick: (String) -> Unit,  // Opens selected campsite
+    onCampsiteClick: (String) -> Unit,
     searchText: String,
     onSearchTextChange: (String) -> Unit
 ) {
-    val campsiteService = remember { CampsiteService() }  // Service to get campsite data
-    var campsites by remember { mutableStateOf<List<Campsite>>(emptyList()) }  // Store the campsites returned from Firebase
-    var loading by remember { mutableStateOf(true) }  // Track loading and errors
+    val campsiteService = remember { CampsiteService() }
+    var selectedFilters by remember { mutableStateOf(CampsiteFilters()) }
+    var showFilters by remember { mutableStateOf(false) }
+    var campsites by remember { mutableStateOf<List<Campsite>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
-    // Finds campsites matching based on filter
-    val filteredCampsites = getDisplayedCampsites(campsites, searchText)
-    // Loading campsites
-    DisposableEffect(campsiteService) {
-        // Listening for changes
+    var retry by remember { mutableStateOf(0) }
+    val searchedCampsites = getDisplayedCampsites(campsites, searchText)
+    val filteredCampsites = applyCampsiteFilters(searchedCampsites, selectedFilters)
+    val browsing = searchText.isBlank() && !hasActiveFilters(selectedFilters)
+
+    DisposableEffect(campsiteService, retry) {
         val listener = campsiteService.listenToPublishedCampsites(
-            onUpdate = { updatedCampsites ->
-                // Updating the list on the screen
-                campsites = updatedCampsites
+            onUpdate = { updated ->
+                campsites = updated
                 error = ""
                 loading = false
             },
-            onError = {  // Error shown if firebase fails
+            onError = {
                 error = "Could not load campsites."
                 loading = false
             }
         )
-        // Stops listening when screen is not present
-        onDispose {
-            listener.remove()
-        }
+        onDispose { listener.remove() }
     }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    0f to Color(0xFF1E3A26),
-                    0.45f to PinedrawColors.Background,
-                    1f to PinedrawColors.Background
-                )
-            )
-            .statusBarsPadding()
-            .padding(20.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
+
+    if (showFilters) {
+        CampsiteFilterDialog(
+            currentFilters = selectedFilters,
+            onApply = {
+                selectedFilters = it
+                showFilters = false
+            },
+            onClose = { showFilters = false }
+        )
+    }
+
+    PinedrawBackground {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().statusBarsPadding(),
+            contentPadding = PaddingValues(bottom = PinedrawSpacing.Screen),
+            verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Large)
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "Welcome back,",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = PinedrawColors.TextSecondary
-                )
-
-                Text(
-                    text = user.name.ifBlank { "Explorer" },
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = PinedrawColors.Text
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .border(2.dp, PinedrawColors.Lime, CircleShape)
-                    .padding(3.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF2E8C86), Color(0xFF1F5C73))
-                        )
-                    )
-                    .clickable { onProfileClick() },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = user.name.firstOrNull()?.uppercase() ?: "P",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = PinedrawColors.Text
-                )
-            }
-        }
-
-        Spacer(Modifier.height(32.dp))
-
-        Text(
-            text = "Find your next adventure.",
-            style = MaterialTheme.typography.headlineLarge,
-            color = PinedrawColors.Lime
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            text = "Discover campsites and explore new places.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = PinedrawColors.TextSecondary
-        )
-        // Space added above the search bar
-        Spacer(modifier = Modifier.height(16.dp))
-        // Let users enter campsite name or location in the searchbar
-        OutlinedTextField(
-            value = searchText,
-            onValueChange = onSearchTextChange,  // Update search text in MainScreen
-            label = { Text("Search campsites") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Spacer(Modifier.height(24.dp))
-        // Display Loading, errors, or the list of campsites
-        when {
-            loading -> {
-                CircularProgressIndicator()
-            }
-            error.isNotEmpty() -> {
-                Text(error, color = PinedrawColors.Text)
-            }
-            // Message shown when campsites not found
-            filteredCampsites.isEmpty() -> {
-                Text(
-                    text = if (searchText.isBlank()) {
-                        "No campsites available."
-                    } else {
-                        "No campsites found"
-                    },
-                    color = PinedrawColors.TextSecondary
-                )
-            }
-            else -> {
-                // Displays in a scrollable list
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
+            item {
+                Column(
+                    Modifier.padding(horizontal = PinedrawSpacing.Gutter).padding(top = PinedrawSpacing.Large),
+                    verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Gutter)
                 ) {
-                    items(filteredCampsites) { campsite ->
-                        // Card is created for each campsite
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp)
-                                .clickable { onCampsiteClick(campsite.id) }  // main screen gets campsite ID
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp)
-                            ) {
-                                Text(
-                                    text = campsite.name,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    text = campsite.location,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                // Displays the maximum number of people allowed at the campsite
-                                Text(
-                                    text = campsite.maxOccupancy?.let { "Max occupancy: $it" }
-                                        ?: "Max occupancy not provided",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                // Rating and no ratings are available
-                                if (campsite.averageRating != null) {
-                                    val rating = campsite.averageRating
-                                    val fullStars = rating.toInt()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        InitialsAvatar(
+                            user.name.ifBlank { "Explorer" },
+                            size = 48.dp,
+                            modifier = Modifier.clip(CircleShape).clickable(onClick = onProfileClick)
+                        )
+                        Spacer(Modifier.width(PinedrawSpacing.Medium))
+                        Column(Modifier.weight(1f)) {
+                            Text(greeting(), style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextSecondary)
+                            Text(
+                                user.name.ifBlank { "Explorer" },
+                                style = MaterialTheme.typography.titleLarge,
+                                color = PinedrawColors.Text,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Text(
+                        buildAnnotatedString {
+                            append("Find your ")
+                            withStyle(SpanStyle(color = PinedrawColors.Lime)) { append("wild escape") }
+                        },
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = PinedrawColors.Text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    SearchBar(
+                        value = searchText,
+                        onValueChange = onSearchTextChange,
+                        filtersActive = hasActiveFilters(selectedFilters),
+                        onFilterClick = { showFilters = true }
+                    )
+                    if (hasActiveFilters(selectedFilters)) {
+                        ActiveFilters(selectedFilters, onClear = { selectedFilters = CampsiteFilters() })
+                    }
+                }
+            }
 
-                                    Row {
-                                        Text(  // Stars using unicode
-                                            text = "\u2605".repeat(fullStars) + "\u2606".repeat(5 - fullStars),
-                                            color = Color(0xFFFFC107)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "$rating / 5",
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                } else {
-                                    // If no ratings available
-                                    Text(
-                                        text = "No ratings yet",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = PinedrawColors.TextSecondary
-                                    )
+            when {
+                loading -> item { LoadingState() }
+                error.isNotEmpty() -> item { ErrorState(error, onRetry = { loading = true; retry++ }) }
+                filteredCampsites.isEmpty() -> item {
+                    EmptyState(
+                        icon = Icons.Rounded.Search,
+                        title = if (browsing) "No campsites available" else "No campsites found",
+                        message = if (browsing) "New campsites will appear here as soon as hosts publish them."
+                        else "Try a different search or clear your filters."
+                    )
+                }
+                else -> {
+                    if (browsing) {
+                        val featured = filteredCampsites.sortedByDescending { it.averageRating ?: 0.0 }.take(5)
+                        item { SectionHeader("Featured for you", Modifier.padding(horizontal = PinedrawSpacing.Gutter)) }
+                        item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = PinedrawSpacing.Gutter),
+                                horizontalArrangement = Arrangement.spacedBy(PinedrawSpacing.Medium)
+                            ) {
+                                items(featured, key = { "featured-${it.id}" }) { campsite ->
+                                    FeaturedCampsiteCard(campsite, onClick = { onCampsiteClick(campsite.id) })
                                 }
                             }
                         }
                     }
+                    item {
+                        SectionHeader(
+                            if (browsing) "All campsites" else "${filteredCampsites.size} ${if (filteredCampsites.size == 1) "result" else "results"}",
+                            Modifier.padding(horizontal = PinedrawSpacing.Gutter)
+                        )
+                    }
+                    items(filteredCampsites, key = { it.id }) { campsite ->
+                        CampsiteRow(
+                            campsite,
+                            onClick = { onCampsiteClick(campsite.id) },
+                            modifier = Modifier.padding(horizontal = PinedrawSpacing.Gutter)
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+    in 5..11 -> "Good morning,"
+    in 12..17 -> "Good afternoon,"
+    else -> "Good evening,"
+}
+
+@Composable
+private fun SearchBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    filtersActive: Boolean,
+    onFilterClick: () -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        PinedrawTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = "Search campsites or places",
+            leadingIcon = Icons.Rounded.Search,
+            trailingIcon = if (value.isNotEmpty()) {
+                { IconButton(onClick = { onValueChange("") }) { Icon(Icons.Rounded.Close, "Clear search") } }
+            } else null,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(PinedrawSpacing.Small))
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(PinedrawRadius.Medium)
+                .background(if (filtersActive) PinedrawColors.Lime else PinedrawColors.Glass)
+                .border(1.dp, if (filtersActive) Color.Transparent else PinedrawColors.Border, PinedrawRadius.Medium)
+                .clickable(onClick = onFilterClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Rounded.Tune,
+                contentDescription = "Filter campsites",
+                tint = if (filtersActive) PinedrawColors.Ink else PinedrawColors.Text
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActiveFilters(filters: CampsiteFilters, onClear: () -> Unit) {
+    val labels = buildList {
+        if (filters.location.isNotBlank()) add(filters.location)
+        if (filters.startDate.isNotBlank()) add("${filters.startDate} → ${filters.endDate}")
+        if (filters.guests > 0) add("${filters.guests}+ guests")
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            labels.forEach { StatusChip(it, color = PinedrawColors.Lime, showDot = false) }
+        }
+        Text(
+            "Clear",
+            style = MaterialTheme.typography.labelLarge,
+            color = PinedrawColors.Lime,
+            modifier = Modifier.clip(PinedrawRadius.Pill).clickable(onClick = onClear).padding(8.dp)
+        )
+    }
+}
+
+@Composable
+private fun RatingLabel(campsite: Campsite, color: Color = PinedrawColors.Text) {
+    val rating = campsite.averageRating
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Star, null, tint = PinedrawColors.Amber, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(3.dp))
+        Text(
+            when {
+                rating == null -> "New"
+                campsite.ratingCount > 0 -> String.format(Locale.CANADA, "%.1f", rating) + " (${campsite.ratingCount})"
+                else -> String.format(Locale.CANADA, "%.1f", rating)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = color
+        )
+    }
+}
+
+@Composable
+private fun MetaLine(campsite: Campsite, color: Color = PinedrawColors.TextSecondary) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Place, null, tint = color, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(3.dp))
+        Text(
+            campsite.location.ifBlank { "Alberta" },
+            style = MaterialTheme.typography.bodySmall,
+            color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        campsite.maxOccupancy?.let {
+            Text("  ·  ", style = MaterialTheme.typography.bodySmall, color = color)
+            Icon(Icons.Rounded.Groups, null, tint = color, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(3.dp))
+            Text("Sleeps $it", style = MaterialTheme.typography.bodySmall, color = color, maxLines = 1)
+        }
+    }
+}
+
+private fun priceText(campsite: Campsite) = formatPrice(campsite.pricePerNight)
+
+// Large photo card used in the Featured carousel.
+@Composable
+private fun FeaturedCampsiteCard(campsite: Campsite, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .width(300.dp)
+            .height(220.dp)
+            .clip(PinedrawRadius.Large)
+            .border(1.dp, PinedrawColors.Border, PinedrawRadius.Large)
+            .clickable(onClick = onClick)
+    ) {
+        CampsitePhoto(campsite.imageUrls.firstOrNull(), Modifier.matchParentSize(), seed = campsite.id, shape = null)
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.verticalGradient(0.35f to Color.Transparent, 1f to PinedrawColors.Background.copy(alpha = 0.92f))
+            )
+        )
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(PinedrawSpacing.Large)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    campsite.name.ifBlank { "Unnamed campsite" },
+                    style = MaterialTheme.typography.titleLarge,
+                    color = PinedrawColors.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(priceText(campsite), style = MaterialTheme.typography.titleLarge, color = PinedrawColors.Lime, maxLines = 1)
+                Text(" /night", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { MetaLine(campsite, PinedrawColors.Text.copy(alpha = 0.85f)) }
+                Spacer(Modifier.width(PinedrawSpacing.Small))
+                RatingLabel(campsite)
+            }
+        }
+    }
+}
+
+// Compact row used in the full campsite list.
+@Composable
+private fun CampsiteRow(campsite: Campsite, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(PinedrawRadius.Large)
+            .background(PinedrawColors.Glass)
+            .border(1.dp, PinedrawColors.Border, PinedrawRadius.Large)
+            .clickable(onClick = onClick)
+            .padding(PinedrawSpacing.Medium),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CampsitePhoto(campsite.imageUrls.firstOrNull(), Modifier.size(88.dp), seed = campsite.id, shape = PinedrawRadius.Medium)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    campsite.name.ifBlank { "Unnamed campsite" },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = PinedrawColors.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(priceText(campsite), style = MaterialTheme.typography.titleMedium, color = PinedrawColors.Text, maxLines = 1)
+                Text(" /nt", style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary)
+            }
+            MetaLine(campsite)
+            RatingLabel(campsite)
         }
     }
 }
@@ -300,6 +463,7 @@ fun getRatingText(rating: Double?): String {
         return "No ratings yet"
     }
 
-    return "$rating / 5"
+    // Averages rarely divide evenly, so show one decimal place.
+    return String.format(Locale.CANADA, "%.1f / 5", rating)
 }
 

@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +20,24 @@ import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.UserService
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import com.example.campsitereservationapp.ui.components.ButtonStyle
+import com.example.campsitereservationapp.ui.components.CircleIconButton
+import com.example.campsitereservationapp.ui.components.EmptyState
+import com.example.campsitereservationapp.ui.components.ErrorState
+import com.example.campsitereservationapp.ui.components.GlassCard
+import com.example.campsitereservationapp.ui.components.LoadingState
+import com.example.campsitereservationapp.ui.components.PinedrawButton
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import com.example.campsitereservationapp.ui.components.PinedrawScreen
+import com.example.campsitereservationapp.ui.components.SceneImage
+import com.example.campsitereservationapp.ui.components.StatusChip
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -117,36 +133,16 @@ fun AdminCampsitesScreen(
         }
     }
 
-    Column(
-        Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(0f to Color(0xFF1E3A26), 0.45f to PinedrawColors.Background, 1f to PinedrawColors.Background))
-            .statusBarsPadding().navigationBarsPadding().padding(horizontal = 20.dp)
+    PinedrawScreen(
+        title = "All campsites",
+        onBack = onBack,
+        backLabel = "Admin Dashboard",
+        scrollable = false,
+        actions = { CircleIconButton(Icons.Rounded.Refresh, "Refresh", { refresh++ }, enabled = !loading && removingId == null) }
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Admin Dashboard")
-            }
-            TextButton(onClick = { refresh++ }, enabled = !loading && removingId == null) {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Refresh")
-            }
-        }
-        Text("All campsites", style = MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(8.dp))
-        Text("Every campsite registered on Pinedraw.", color = PinedrawColors.TextSecondary)
-        Spacer(Modifier.height(16.dp))
-
         when {
-            loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PinedrawColors.Lime)
-            }
-            error.isNotEmpty() -> Column(Modifier.padding(vertical = 24.dp)) {
-                Text(error, color = PinedrawColors.Coral)
-                TextButton(onClick = { refresh++ }) { Text("Try again") }
-            }
+            loading -> LoadingState()
+            error.isNotEmpty() -> ErrorState(error, onRetry = { refresh++ })
             else -> AdminCampsiteList(
                 rows = rows,
                 removingId = removingId,
@@ -196,41 +192,34 @@ fun AdminCampsiteList(
     var confirming by remember { mutableStateOf<AdminCampsiteRow?>(null) }
 
     if (rows.isEmpty()) {
-        Card(
-            modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-        ) {
-            Text("No campsites found", Modifier.padding(24.dp), style = MaterialTheme.typography.titleLarge)
-        }
+        EmptyState(Icons.Rounded.Cabin, "No campsites found")
         return
     }
 
-    Column {
-        Text("${rows.size} ${if (rows.size == 1) "campsite" else "campsites"}", color = PinedrawColors.TextMuted)
-        Spacer(Modifier.height(12.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Medium)) {
+        Text(style = MaterialTheme.typography.bodyMedium, color = PinedrawColors.TextMuted, text = "${rows.size} ${if (rows.size == 1) "campsite" else "campsites"}")
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(bottom = 24.dp)
+            verticalArrangement = Arrangement.spacedBy(PinedrawSpacing.Medium),
+            contentPadding = PaddingValues(bottom = PinedrawSpacing.Screen)
         ) {
             items(rows, key = { it.id }) { row ->
-                Card(
-                    onClick = { onCampsiteClick(row.id) },
-                    modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-                    colors = CardDefaults.cardColors(containerColor = PinedrawColors.Glass, contentColor = PinedrawColors.Text)
-                ) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(row.name, fontWeight = FontWeight.Bold)
-                            Text(row.location, color = PinedrawColors.TextSecondary)
+                GlassCard(onClick = { onCampsiteClick(row.id) }, contentPadding = 12.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SceneImage(row.id, Modifier.size(64.dp).clip(PinedrawRadius.Medium))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(row.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(row.location, style = MaterialTheme.typography.bodySmall, color = PinedrawColors.TextSecondary, maxLines = 1)
                             Text("Owner: ${row.ownerName}", style = MaterialTheme.typography.bodySmall,
-                                color = PinedrawColors.TextSecondary)
-                            Text(if (row.published) "Published" else "Draft",
+                                color = PinedrawColors.TextSecondary, maxLines = 1)
+                            StatusChip(if (row.published) "Published" else "Draft",
                                 color = if (row.published) PinedrawColors.Lime else PinedrawColors.TextMuted)
                         }
-                        TextButton(onClick = { confirming = row }, enabled = removingId == null) {
-                            Text(if (removingId == row.id) "Removing..." else "Remove", color = PinedrawColors.Coral,
-                                fontWeight = FontWeight.Bold)
-                        }
+                        PinedrawButton(
+                            if (removingId == row.id) "Removing..." else "Remove",
+                            onClick = { confirming = row }, enabled = removingId == null,
+                            style = ButtonStyle.SoftDestructive, compact = true
+                        )
                     }
                 }
             }
@@ -238,16 +227,17 @@ fun AdminCampsiteList(
     }
 
     confirming?.let { row ->
-        AlertDialog(
-            onDismissRequest = { confirming = null },
-            title = { Text("Remove ${row.name}?") },
-            text = { Text("Entrants will no longer see this campsite. Any active lottery will be closed and its waiting list cleared.") },
-            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirming = null
-                    onRemove(row)
-                }) { Text("Remove", color = PinedrawColors.Coral) }
+        PinedrawDialog(
+            title = "Remove ${row.name}?",
+            message = "Entrants will no longer see this campsite. Any active lottery will be closed and its waiting list cleared.",
+            icon = Icons.Rounded.DeleteOutline,
+            iconTint = PinedrawColors.Coral,
+            confirmText = "Remove",
+            confirmStyle = ButtonStyle.Destructive,
+            onDismiss = { confirming = null },
+            onConfirm = {
+                confirming = null
+                onRemove(row)
             }
         )
     }

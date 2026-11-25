@@ -18,7 +18,10 @@ import com.example.campsitereservationapp.model.reservationCampsiteChoice
 import com.example.campsitereservationapp.model.reservationCampsiteError
 import com.example.campsitereservationapp.model.reservationNights
 import com.example.campsitereservationapp.model.isNightOpen
+import com.example.campsitereservationapp.notification.reservationConfirmationMessage
+import com.example.campsitereservationapp.notification.cancellationConfirmationMessage
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.async
@@ -35,7 +38,7 @@ import kotlinx.coroutines.coroutineScope
  * and use the rules in Reservation.kt, so the screens and the database always agree.
  *
  * Outstanding issues: declining, cancelling or rejecting does not yet trigger a redraw for
- * the next entrant (US 02.05.01) or send a notification (US 01.07.02).
+ * the next entrant (US 02.05.01), and rejection does not notify the entrant.
  */
 class ReservationService {
     private val db = FirebaseFirestore.getInstance()
@@ -180,6 +183,7 @@ class ReservationService {
         val relatedIds = LotteryService().getLotteriesForCampsite(selectedId).map { it.id }.distinct()
         val lotteryDoc = db.collection("lotteries").document(lotteryId)
         val reservationDoc = db.collection("reservations").document()
+        val notificationDoc = db.collection("notifications").document()
         return db.runTransaction { transaction ->
             val lottery = transaction.get(lotteryDoc).toObject(Lottery::class.java)?.copy(id = lotteryId)
                 ?: return@runTransaction "This lottery is no longer available."
@@ -199,11 +203,26 @@ class ReservationService {
             val occupied = occupiedCampsiteNights(selectedId, related)
             if (reservationNights(checkIn, checkOut).any { !isNightOpen(it, lottery, campsite, occupied) })
                 return@runTransaction "Some of these dates are not available. Please choose others."
+            val guests = lottery.registeredGroupSizes[uid] ?: 1
+            val total = campsite.pricePerNight * reservationNights(checkIn, checkOut).size
             val reservation = Reservation(
                 id = reservationDoc.id, entrantId = uid, campsiteId = selectedId, lotteryId = lotteryId,
-                campsiteName = campsite.name, checkInDate = checkIn, checkOutDate = checkOut
+                campsiteName = campsite.name, checkInDate = checkIn, checkOutDate = checkOut,
+                guestCount = guests, totalPrice = total
             )
             transaction.set(reservationDoc, reservation)
+            transaction.set(notificationDoc, mapOf(
+                "senderId" to uid,
+                "recipientIds" to listOf(uid),
+                "title" to "Reservation confirmed",
+                "message" to reservationConfirmationMessage(campsite, checkIn, checkOut, guests, total),
+                "campsiteId" to selectedId,
+                "campsiteName" to campsite.name,
+                "lotteryId" to lotteryId,
+                "reservationId" to reservationDoc.id,
+                "kind" to "reservation_confirmed",
+                "createdAt" to FieldValue.serverTimestamp()
+            ))
             transaction.update(lotteryDoc, mapOf(
                 "pending" to lottery.pending - uid,
                 "booked" to lottery.booked + reservation
@@ -248,8 +267,10 @@ class ReservationService {
     suspend fun cancel(reservationId: String): String? {
         val uid = auth.currentUser?.uid ?: throw Exception("Not signed in")
         val reservationDoc = db.collection("reservations").document(reservationId)
+        val notificationDoc = db.collection("notifications").document()
         return db.runTransaction { transaction ->
             val reservation = transaction.get(reservationDoc).toObject(Reservation::class.java)
+                ?.copy(id = reservationId)
                 ?: return@runTransaction "This reservation no longer exists."
             val lotteryDoc = reservation.lotteryId.takeIf { it.isNotBlank() }
                 ?.let { db.collection("lotteries").document(it) }
@@ -257,12 +278,23 @@ class ReservationService {
             val error = cancelError(reservation, uid, reservationDateToday())
             if (error != null) return@runTransaction error
             transaction.update(reservationDoc, "status", RESERVATION_CANCELLED)
+            transaction.set(notificationDoc, mapOf(
+                "senderId" to uid,
+                "recipientIds" to listOf(uid),
+                "title" to "Reservation cancelled",
+                "message" to cancellationConfirmationMessage(reservation),
+                "campsiteId" to reservation.campsiteId,
+                "campsiteName" to reservation.campsiteName,
+                "lotteryId" to reservation.lotteryId,
+                "reservationId" to reservationId,
+                "kind" to "cancellation_confirmed",
+                "createdAt" to FieldValue.serverTimestamp()
+            ))
             if (lotteryDoc != null && lottery != null && uid !in lottery.cancelledEntrantIds) {
                 transaction.update(lotteryDoc, "cancelledEntrantIds", lottery.cancelledEntrantIds + uid)
             }
             null
         }.await()
-        // US 01.07.02: send the cancellation notification here (on success) once it exists.
     }
 
     /**

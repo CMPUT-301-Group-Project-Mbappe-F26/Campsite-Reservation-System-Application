@@ -5,11 +5,23 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -17,198 +29,109 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.campsitereservationapp.R
+import com.example.campsitereservationapp.ui.components.PinedrawButton
 import com.example.campsitereservationapp.ui.theme.PinedrawColors
+import com.example.campsitereservationapp.ui.theme.PinedrawRadius
+import com.example.campsitereservationapp.ui.theme.PinedrawSpacing
 
 /**
- * Shows the sign-in options and guest entry button
+ * Welcome screen with the Pinedraw brand and a single "Continue as guest" action.
  *
- * @param onGoogleClick Starts Google sign-in.
- * @param onRegisterClick Opens the registration screen.
- * @param onLoginClick Opens the login screen.
- * @param onGuestClick Continues as a guest.
+ * @param onGuestClick Signs in anonymously and opens the app.
+ * @param loading True while the guest account is being created.
  */
 @Composable
-fun WelcomeScreen(
-    onGoogleClick: () -> Unit,
-    onRegisterClick: () -> Unit,
-    onLoginClick: () -> Unit,
-    onGuestClick: () -> Unit
-) {
+fun WelcomeScreen(onGuestClick: () -> Unit, loading: Boolean = false) {
     val context = LocalContext.current
     val logo = remember {
-        context.assets.open("icons/pinedraw_logo.png").use {
-            BitmapFactory.decodeStream(it)
-        }.asImageBitmap()
+        context.assets.open("icons/pinedraw_logo.png").use { BitmapFactory.decodeStream(it) }.asImageBitmap()
     }
     val fade = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        fade.animateTo(1f, tween(700)) // Fade in when screen opens
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF173A26),
-                        PinedrawColors.Surface,
-                        PinedrawColors.Background
-                    )
-                )
-            )
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.weight(1f))
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.graphicsLayer {
-                alpha = fade.value
-                translationY = (1f - fade.value) * 20f
-            }
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(150.dp)
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                PinedrawColors.Lime.copy(alpha = 0.25f),
-                                Color.Transparent
-                            )
-                        ),
-                        CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    bitmap = logo,
-                    contentDescription = "Pinedraw logo",
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                )
-            }
+    LaunchedEffect(Unit) { fade.animateTo(1f, tween(700)) }
 
-            Spacer(Modifier.height(12.dp))
+    Box(Modifier.fillMaxSize().background(PinedrawColors.Background)) {
+        Image(
+            painter = painterResource(R.drawable.scene_aurora_campfire),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.55f to Color.Transparent,
+                    0.8f to PinedrawColors.Background.copy(alpha = 0.92f),
+                    1f to PinedrawColors.Background
+                )
+            )
+        )
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = PinedrawSpacing.Screen, vertical = PinedrawSpacing.Gutter)
+                .graphicsLayer {
+                    alpha = fade.value
+                    translationY = (1f - fade.value) * 24f
+                },
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.height(56.dp))
+            Image(
+                bitmap = logo,
+                contentDescription = "Pinedraw logo",
+                modifier = Modifier.size(88.dp).clip(PinedrawRadius.Large)
+            )
+            Spacer(Modifier.height(PinedrawSpacing.Large))
+            Text("Pinedraw", style = MaterialTheme.typography.displayLarge.copy(fontSize = 40.sp), color = PinedrawColors.Text)
+            Spacer(Modifier.height(PinedrawSpacing.Small))
             Text(
-                text = "Pinedraw",
+                "FAIR DRAWS · WILD PLACES",
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 2.5.sp),
+                color = PinedrawColors.Lime
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                buildAnnotatedString {
+                    append("Camp by chance,\n")
+                    withStyle(SpanStyle(color = PinedrawColors.Lime)) { append("not by refresh.") }
+                },
+                style = MaterialTheme.typography.displayMedium,
                 color = PinedrawColors.Text,
-                fontSize = 34.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "FAIR DRAWS · WILD PLACES",
-                color = PinedrawColors.Lime,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.5.sp
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "Camp by chance, not by refresh.",
-                color = PinedrawColors.Lime,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                softWrap = false,
-                textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(PinedrawSpacing.Medium))
             Text(
-                text = "Your next outdoor adventure starts here.",
+                "Fair lotteries for Alberta's busiest campsites.",
+                style = MaterialTheme.typography.bodyLarge,
                 color = PinedrawColors.TextSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-                fontSize = 15.sp
+                modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(28.dp))
-            Button(
-                onClick = onGoogleClick,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PinedrawColors.Text,
-                    contentColor = PinedrawColors.Ink
-                )
-            ) {
-                Text(
-                    "Continue with Google",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = onRegisterClick,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PinedrawColors.Lime,
-                    contentColor = PinedrawColors.Ink
-                )
-            ) {
-                Text(
-                    "Sign up with email",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Button(
+            Spacer(Modifier.height(PinedrawSpacing.Section))
+            PinedrawButton(
+                text = if (loading) "Setting things up…" else "Continue as guest",
                 onClick = onGuestClick,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PinedrawColors.Lime,
-                    contentColor = PinedrawColors.Ink
-                )
-            ) {
-                Text(
-                    "Continue as guest",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Spacer(Modifier.height(18.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Already have an account?",
-                    color = PinedrawColors.TextSecondary,
-                    fontSize = 13.sp
-                )
-                TextButton(onClick = onLoginClick) {
-                    Text(
-                        "Log in",
-                        color = PinedrawColors.Lime,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
+                loading = loading,
+                icon = Icons.AutoMirrored.Rounded.ArrowForward,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(PinedrawSpacing.Large))
             Text(
-                text = "By continuing, you agree to our Terms and Privacy Policy.",
+                "By continuing you agree to the Pinedraw Terms and Privacy Policy.",
+                style = MaterialTheme.typography.bodySmall,
                 color = PinedrawColors.TextMuted,
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )

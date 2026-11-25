@@ -48,6 +48,7 @@ class ReserveIntentTest {
     private var reservedCalled = false
     private var declined = false
     private var wentBack = false
+    private var downloadedCsv = ""
 
     private fun showReserve(
         checkIn: String? = null,
@@ -70,7 +71,9 @@ class ReserveIntentTest {
                 onReserved = { reservedCalled = true },
                 initialCheckIn = checkIn,
                 initialCheckOut = checkOut,
-                today = "2027-06-01"
+                today = "2027-06-01",
+                groupSize = 4,
+                onDownloadCsv = { downloadedCsv = it }
             )
         }
     }
@@ -111,6 +114,18 @@ class ReserveIntentTest {
         composeRule.onNodeWithText("$77.00 CAD").assertIsDisplayed()
         composeRule.onNodeWithText("I've read and agree to the campsite rules and cancellation policy.").performClick()
         composeRule.onNodeWithText("Reserve").performClick()
+        composeRule.onNodeWithText("You’re going camping!").assertIsDisplayed()
+        composeRule.onNodeWithText("Two Jack Lakeside").assertIsDisplayed()
+        composeRule.onNodeWithText("4 guests").assertIsDisplayed()
+        composeRule.onNodeWithText("Jul 2, 2027").assertIsDisplayed()
+        composeRule.onNodeWithText("Jul 4, 2027").assertIsDisplayed()
+        composeRule.onNodeWithText("$77.00 CAD").assertIsDisplayed()
+        composeRule.onNodeWithText("Download CSV").performClick()
+        assertTrue(downloadedCsv.contains("Two Jack Lakeside"))
+        assertTrue(downloadedCsv.contains("Banff, AB"))
+        assertTrue(downloadedCsv.contains("2027-07-02,2027-07-04,4,$77.00 CAD"))
+        assertFalse(reservedCalled)
+        composeRule.onNodeWithText("View my trip").performClick()
         composeRule.waitUntil(5000) { reservedCalled }
         assertEquals(Triple("2027-07-02", "2027-07-04", true), reserved)
     }

@@ -24,7 +24,10 @@ data class Campsite(
     val rules: String = "",
     val cancellationPolicy: String = "Flexible",
     val requireRulesAcceptance: Boolean = true,
-    val averageRating: Double? = null  // Average campsite rating
+    val averageRating: Double? = null,  // Average campsite rating
+    val ratingCount: Int = 0,  // Number of ratings behind the average
+    val ratingTotal: Int = 0,  // Sum of their stars
+    val lastRatingId: String = ""  // Newest rating, so Firestore rules can check it against the average
 ) {
     // Checks whether this user owns the campsite and can use its owner-only options.
     fun isOwnedBy(userId: String?): Boolean = !userId.isNullOrBlank() && ownerId == userId
