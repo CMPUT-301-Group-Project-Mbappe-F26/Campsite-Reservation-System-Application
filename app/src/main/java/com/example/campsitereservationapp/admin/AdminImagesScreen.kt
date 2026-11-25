@@ -16,7 +16,18 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import android.widget.Toast
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.rounded.Cabin
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import com.example.campsitereservationapp.service.AdminImageService
+import com.example.campsitereservationapp.service.imageRemovalError
+import com.example.campsitereservationapp.ui.components.PinedrawDialog
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Refresh
@@ -63,12 +74,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 /*
  * Lets an admin browse every uploaded image (US 03.06.01): campsite promo photos and
  * profile photos, each labelled with the campsite or profile it belongs to. Tapping an
- * image opens a larger preview.
+ * image opens a larger preview. Each image has a Remove button (US 03.03.01) that asks the
+ * admin to confirm, deletes the image and reports whether it worked.
  *
- * [AdminImagesScreen] loads campsites and profiles from Firebase. [AdminImageGrid] only
- * draws the images, so intent tests can check it without Firebase.
+ * [AdminImagesScreen] loads campsites and profiles from Firebase and removes images.
+ * [AdminImageGrid] only draws the images, so intent tests can check it without Firebase.
  *
- * Outstanding issues: removing an image (US 03.03.01) is not implemented yet.
+ * Outstanding issues: the grid does not update live; it reloads on Refresh.
  */
 
 /**
@@ -84,6 +96,10 @@ fun AdminImagesScreen(onBack: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
+    var removingId by remember { mutableStateOf<String?>(null) }
+    val imageService = remember { AdminImageService() }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(refresh) {
         loading = true
@@ -116,7 +132,29 @@ fun AdminImagesScreen(onBack: () -> Unit) {
         when {
             loading -> LoadingState()
             error.isNotEmpty() -> ErrorState(error, onRetry = { refresh++ })
-            else -> AdminImageGrid(images)
+            else -> AdminImageGrid(
+                images = images,
+                removingId = removingId,
+                onRemove = { image ->
+                    removingId = image.id
+                    scope.launch {
+                        val message = try {
+                            val result = withTimeoutOrNull(20000) { imageService.remove(image) }
+                            if (result == null) "Removing the image timed out. Please try again."
+                            else {
+                                images = images.filter { it.id != image.id }
+                                result.message
+                            }
+                        } catch (exception: Exception) {
+                            coroutineContext.ensureActive() // Stop normally when leaving the screen.
+                            imageRemovalError(exception)
+                        } finally {
+                            removingId = null
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
         }
     }
 }
@@ -125,14 +163,22 @@ fun AdminImagesScreen(onBack: () -> Unit) {
  * Shows uploaded images in a grid with All, Campsite promos and Profile photos tabs.
  *
  * Each tile is labelled with what the image belongs to. Tapping a tile opens a larger
- * preview. Shows "No images found" when there are none.
+ * preview. When [onRemove] is given, each image has a Remove button that asks the admin to
+ * confirm first. Shows "No images found" when there are none.
  *
  * @param images Images to show, from [adminImages].
+ * @param onRemove Removes an image after the admin confirms, or null to hide Remove.
+ * @param removingId ID of the image being removed; Remove buttons are disabled meanwhile.
  */
 @Composable
-fun AdminImageGrid(images: List<AdminImage>) {
+fun AdminImageGrid(
+    images: List<AdminImage>,
+    onRemove: ((AdminImage) -> Unit)? = null,
+    removingId: String? = null
+) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var previewId by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmingId by rememberSaveable { mutableStateOf<String?>(null) }
     val campsiteCount = images.count { it.source == AdminImageSource.CAMPSITE }
     val profileCount = images.size - campsiteCount
     val shown = when (tab) {
@@ -163,20 +209,54 @@ fun AdminImageGrid(images: List<AdminImage>) {
                 contentPadding = PaddingValues(bottom = PinedrawSpacing.Screen)
             ) {
                 items(shown, key = { it.id }) { image ->
-                    AdminImageTile(image, onClick = { previewId = image.id })
+                    AdminImageTile(
+                        image,
+                        onClick = { previewId = image.id },
+                        onRemove = onRemove?.let { { confirmingId = image.id } },
+                        removing = removingId == image.id,
+                        removeEnabled = removingId == null
+                    )
                 }
             }
         }
     }
 
     images.find { it.id == previewId }?.let { image ->
-        AdminImagePreview(image, onClose = { previewId = null })
+        AdminImagePreview(
+            image,
+            onClose = { previewId = null },
+            onRemove = onRemove?.let { { previewId = null; confirmingId = image.id } },
+            removeEnabled = removingId == null
+        )
+    }
+
+    images.find { it.id == confirmingId }?.let { image ->
+        val placeholder = if (image.source == AdminImageSource.CAMPSITE) "a landscape placeholder" else "their initials"
+        PinedrawDialog(
+            title = "Remove this image?",
+            message = "It will be deleted from storage and ${image.ownerName} will show $placeholder instead. This cannot be undone.",
+            icon = Icons.Rounded.DeleteOutline,
+            iconTint = PinedrawColors.Coral,
+            confirmText = "Remove",
+            confirmStyle = ButtonStyle.Destructive,
+            onDismiss = { confirmingId = null },
+            onConfirm = {
+                confirmingId = null
+                onRemove?.invoke(image)
+            }
+        )
     }
 }
 
-// One square tile: the image with the owner's name along the bottom.
+// One square tile: the image with the owner's name along the bottom and a Remove button.
 @Composable
-private fun AdminImageTile(image: AdminImage, onClick: () -> Unit) {
+private fun AdminImageTile(
+    image: AdminImage,
+    onClick: () -> Unit,
+    onRemove: (() -> Unit)?,
+    removing: Boolean,
+    removeEnabled: Boolean
+) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -201,6 +281,21 @@ private fun AdminImageTile(image: AdminImage, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
         )
+        if (onRemove != null) {
+            Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) {
+                if (removing) {
+                    CircularProgressIndicator(Modifier.size(28.dp).padding(4.dp), color = PinedrawColors.Coral, strokeWidth = 2.dp)
+                } else {
+                    CircleIconButton(
+                        Icons.Rounded.DeleteOutline, "Remove ${image.ownerName} image", onRemove,
+                        tint = PinedrawColors.Coral,
+                        container = PinedrawColors.Background.copy(alpha = 0.75f),
+                        enabled = removeEnabled,
+                        size = 32.dp
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -220,9 +315,14 @@ private fun AdminImageView(image: AdminImage, modifier: Modifier = Modifier) {
     }
 }
 
-// Larger view of one image with what it belongs to.
+// Larger view of one image with what it belongs to, and Remove when allowed.
 @Composable
-private fun AdminImagePreview(image: AdminImage, onClose: () -> Unit) {
+private fun AdminImagePreview(
+    image: AdminImage,
+    onClose: () -> Unit,
+    onRemove: (() -> Unit)?,
+    removeEnabled: Boolean
+) {
     val campsite = image.source == AdminImageSource.CAMPSITE
     AlertDialog(
         onDismissRequest = onClose,
@@ -251,7 +351,14 @@ private fun AdminImagePreview(image: AdminImage, onClose: () -> Unit) {
             }
         },
         confirmButton = {
-            PinedrawButton("Close", onClose, Modifier.fillMaxWidth(), style = ButtonStyle.Ghost, compact = true)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(PinedrawSpacing.Small)) {
+                PinedrawButton("Close", onClose, Modifier.weight(1f), style = ButtonStyle.Ghost, compact = true)
+                if (onRemove != null) PinedrawButton(
+                    "Remove", onRemove, Modifier.weight(1f),
+                    style = ButtonStyle.SoftDestructive, icon = Icons.Rounded.DeleteOutline,
+                    enabled = removeEnabled, compact = true
+                )
+            }
         }
     )
 }

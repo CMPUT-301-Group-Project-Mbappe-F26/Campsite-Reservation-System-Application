@@ -6,6 +6,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.compose.ui.test.onNodeWithContentDescription
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -66,5 +69,43 @@ class AdminImagesIntentTest {
     fun noImagesShowsAMessage() {
         composeRule.setContent { AdminImageGrid(emptyList()) }
         composeRule.onNodeWithText("No images found").assertIsDisplayed()
+    }
+
+    @Test
+    fun removeAsksForConfirmationBeforeRemoving() {
+        var removed: AdminImage? = null
+        composeRule.setContent { AdminImageGrid(images, onRemove = { removed = it }) }
+        composeRule.onNodeWithContentDescription("Remove Maria Lopez image").performClick()
+        composeRule.onNodeWithText("Remove this image?").assertIsDisplayed()
+        assertNull(removed)
+        composeRule.onNodeWithText("Remove").performClick()
+        assertEquals("profile-user-maria", removed?.id)
+    }
+
+    @Test
+    fun cancellingTheConfirmationKeepsTheImage() {
+        var removed: AdminImage? = null
+        composeRule.setContent { AdminImageGrid(images, onRemove = { removed = it }) }
+        composeRule.onNodeWithContentDescription("Remove Two Jack Lakeside image").performClick()
+        composeRule.onNodeWithText("Cancel").performClick()
+        assertNull(removed)
+        composeRule.onNodeWithText("Remove this image?").assertDoesNotExist()
+    }
+
+    @Test
+    fun previewOffersRemove() {
+        var removed: AdminImage? = null
+        composeRule.setContent { AdminImageGrid(images, onRemove = { removed = it }) }
+        composeRule.onNodeWithTag("admin-image-campsite-site-two-jack-0").performClick()
+        composeRule.onNodeWithText("Remove").performClick()
+        composeRule.onNodeWithText("Remove this image?").assertIsDisplayed()
+        composeRule.onNodeWithText("Remove").performClick()
+        assertEquals("campsite-site-two-jack-0", removed?.id)
+    }
+
+    @Test
+    fun removeIsHiddenWithoutPermission() {
+        composeRule.setContent { AdminImageGrid(images) }
+        composeRule.onNodeWithContentDescription("Remove Maria Lopez image").assertDoesNotExist()
     }
 }
