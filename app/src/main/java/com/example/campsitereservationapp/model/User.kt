@@ -28,6 +28,8 @@ data class User(
     val email: String = "",
     val phone: String = "",
     val city: String = "",
+    // Same fix as isAdmin below, so the field is saved and read as isOwner.
+    @get:PropertyName("isOwner") @field:PropertyName("isOwner")
     val isOwner: Boolean = false,
     val notificationsEnabled: Boolean = true,
     // Keeps the Firestore field name as isAdmin; Kotlin would otherwise save it as "admin" and never read it back.
