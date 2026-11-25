@@ -32,7 +32,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.campsitereservationapp.campsite.rememberCampsiteOwnerId
 import com.example.campsitereservationapp.model.User
+import com.example.campsitereservationapp.service.CampsiteService
 import com.example.campsitereservationapp.service.UserService
+import com.example.campsitereservationapp.service.withOwnerRoles
 import com.example.campsitereservationapp.service.adminCanRemoveProfile
 import com.example.campsitereservationapp.ui.components.ButtonStyle
 import com.example.campsitereservationapp.ui.components.CircleIconButton
@@ -74,6 +76,7 @@ fun AdminProfilesScreen(
     onProfileClick: (String) -> Unit
 ) {
     val userService = remember { UserService() }
+    val campsiteService = remember { CampsiteService() }
     val adminId = rememberCampsiteOwnerId().orEmpty()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -87,7 +90,10 @@ fun AdminProfilesScreen(
         loading = true
         error = ""
         try {
-            val result = withTimeoutOrNull(20000) { userService.getAllUsers() }
+            val result = withTimeoutOrNull(20000) {
+                // Anyone who has listed a campsite is an owner (see withOwnerRoles).
+                withOwnerRoles(userService.getAllUsers(), campsiteService.getAllCampsites())
+            }
             if (result == null) error = "Could not load profiles. Please try again."
             else rows = result.sortedBy { it.name.ifBlank { "~" }.lowercase() }
         } catch (_: Exception) {

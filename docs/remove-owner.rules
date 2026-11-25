@@ -1,0 +1,38 @@
+// MERGE FRAGMENT, not a standalone ruleset (US 03.07.01 remove campsite owners).
+// Place inside the existing /databases/{database}/documents scope, which already defines isAdmin().
+//
+// Removing an owner (OwnerRemovalService.removeOwner) runs one transaction that:
+//   1. closes active lotteries offering the owner's campsites and frees cancelled entrants'
+//      nights (already allowed: lotteries have `update: if isAdmin()`),
+//   2. cancels upcoming reservations there (already allowed by apCancelsReservation() in
+//      admin-profiles.rules),
+//   3. creates one notification per cancelled reservation, sent to that entrant,
+//   4. deletes the owner's campsites (already allowed for admins by US 03.01.01),
+//   5. sets the owner's isOwner to false.
+// Only steps 3 and 5 need the new lines below.
+
+// An admin may only take away the owner role, nothing else on the profile.
+function roRemovesOwnerRole() {
+  return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOwner'])
+    && request.resource.data.isOwner == false;
+}
+
+// Inside the existing match /users/{userId} block:
+//   allow update: if isAdmin() && request.auth.uid != userId && roRemovesOwnerRole();
+//
+// Inside the match /notifications/{notificationId} block. If the ruleset has no such block,
+// every notification write is denied (including reservation confirmations), so the block
+// also needs the read rule and the entrant and owner create rules, not just this line:
+//   allow read: if signedIn() && (request.auth.uid in resource.data.recipientIds
+//     || resource.data.senderId == request.auth.uid || isAdmin());
+//   allow create: if signedIn() && request.resource.data.senderId == request.auth.uid
+//     && request.resource.data.recipientIds == [request.auth.uid]
+//     && request.resource.data.get('kind', '') in ['reservation_confirmed', 'cancellation_confirmed'];
+//   allow create: if signedIn() && request.resource.data.senderId == request.auth.uid
+//     && request.resource.data.recipientIds is list && !('kind' in request.resource.data)
+//     && ownsCampsite(request.resource.data.campsiteId);
+//   allow create: if isAdmin()
+//     && request.resource.data.senderId == request.auth.uid
+//     && request.resource.data.kind == 'owner_removed'
+//     && request.resource.data.recipientIds is list
+//     && request.resource.data.recipientIds.size() == 1;
