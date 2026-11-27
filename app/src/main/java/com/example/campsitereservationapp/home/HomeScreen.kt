@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Tune
@@ -84,7 +85,8 @@ fun HomeScreen(
     onProfileClick: () -> Unit,
     onCampsiteClick: (String) -> Unit,
     searchText: String,
-    onSearchTextChange: (String) -> Unit
+    onSearchTextChange: (String) -> Unit,
+    onMapClick: () -> Unit = {}
 ) {
     val campsiteService = remember { CampsiteService() }
     var selectedFilters by remember { mutableStateOf(CampsiteFilters()) }
@@ -166,7 +168,8 @@ fun HomeScreen(
                         value = searchText,
                         onValueChange = onSearchTextChange,
                         filtersActive = hasActiveFilters(selectedFilters),
-                        onFilterClick = { showFilters = true }
+                        onFilterClick = { showFilters = true },
+                        onMapClick = onMapClick
                     )
                     if (hasActiveFilters(selectedFilters)) {
                         ActiveFilters(selectedFilters, onClear = { selectedFilters = CampsiteFilters() })
@@ -230,13 +233,14 @@ private fun SearchBar(
     value: String,
     onValueChange: (String) -> Unit,
     filtersActive: Boolean,
-    onFilterClick: () -> Unit
+    onFilterClick: () -> Unit,
+    onMapClick: () -> Unit
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         PinedrawTextField(
             value = value,
             onValueChange = onValueChange,
-            placeholder = "Search campsites or places",
+            placeholder = "Search campsites",
             leadingIcon = Icons.Rounded.Search,
             trailingIcon = if (value.isNotEmpty()) {
                 { IconButton(onClick = { onValueChange("") }) { Icon(Icons.Rounded.Close, "Clear search") } }
@@ -258,6 +262,19 @@ private fun SearchBar(
                 contentDescription = "Filter campsites",
                 tint = if (filtersActive) PinedrawColors.Ink else PinedrawColors.Text
             )
+        }
+        Spacer(Modifier.width(PinedrawSpacing.Small))
+        // Opens the campsite map (WOW factor).
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(PinedrawRadius.Medium)
+                .background(PinedrawColors.Glass)
+                .border(1.dp, PinedrawColors.Border, PinedrawRadius.Medium)
+                .clickable(onClick = onMapClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Rounded.Map, contentDescription = "Open map", tint = PinedrawColors.Text)
         }
     }
 }

@@ -46,6 +46,8 @@ import com.example.campsitereservationapp.campsite.MyCampsitesScreen
 import com.example.campsitereservationapp.campsite.CampsiteDetailsScreen
 import com.example.campsitereservationapp.model.User
 import com.example.campsitereservationapp.lottery.LotteriesScreen
+import com.example.campsitereservationapp.map.CampsiteMapScreen
+import com.example.campsitereservationapp.map.CampsiteMapState
 import com.example.campsitereservationapp.messaging.CampsiteMessagesScreen
 import com.example.campsitereservationapp.messaging.ReservationMessagesScreen
 import com.example.campsitereservationapp.profile.EditProfileScreen
@@ -90,7 +92,9 @@ fun MainScreen(
     var showingCampsites by rememberSaveable { mutableStateOf(false) }
     var campsiteId by rememberSaveable { mutableStateOf<String?>(null) }
     var entrantCampsiteId by rememberSaveable { mutableStateOf<String?>(null) }  // selected from Discover or Lotteries
-    var searchText by rememberSaveable { mutableStateOf("") }  // Keep the search text when opening and closing campsite details
+    var searchText by rememberSaveable { mutableStateOf("") }
+    var showingMap by rememberSaveable { mutableStateOf(false) }  // campsite map opened from Discover
+    var mapState by remember { mutableStateOf(CampsiteMapState()) }  // kept while a campsite from the map is open  // Keep the search text when opening and closing campsite details
     var reservationId by rememberSaveable { mutableStateOf<String?>(null) }
     var showingCampsiteMessages by rememberSaveable { mutableStateOf(false) }
     var messageReservationId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -132,6 +136,7 @@ fun MainScreen(
     }
     BackHandler(enabled = reservationId != null) { reservationId = null }
     BackHandler(enabled = reserveLotteryId != null) { reserveLotteryId = null }
+    BackHandler(enabled = showingMap && entrantCampsiteId == null) { showingMap = false }  // Leave the map for Discover
     BackHandler(enabled = entrantCampsiteId != null) { entrantCampsiteId = null }  // Return to Discover after leaving campsite details
     BackHandler(enabled = adminMode) {
         when {
@@ -158,7 +163,7 @@ fun MainScreen(
         containerColor = PinedrawColors.Background,
         bottomBar = {
             // Hide bottom navigation when some other screen is open
-            if (!editing && !hostMode && !adminMode && messageReservationId == null && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
+            if (!editing && !hostMode && !adminMode && !showingMap && messageReservationId == null && reservationId == null && reserveLotteryId == null && entrantCampsiteId == null) {
                 PinedrawNavBar(
                     selectedTab = selectedTab,
                     onTabSelected = { selectedTab = it },
@@ -335,12 +340,19 @@ fun MainScreen(
                     fromDiscover = selectedTab == 0
                 )
 
+                showingMap -> CampsiteMapScreen(
+                    state = mapState,
+                    onStateChange = { mapState = it },
+                    onBack = { showingMap = false },
+                    onCampsiteClick = { entrantCampsiteId = it }
+                )
                 selectedTab == 0 -> HomeScreen(
                     user = user,
                     onProfileClick = { selectedTab = 3 }, // Open Profile tab
                     onCampsiteClick = { entrantCampsiteId = it },
                     searchText = searchText,  // Remember the previous search
-                    onSearchTextChange = { searchText = it }
+                    onSearchTextChange = { searchText = it },
+                    onMapClick = { showingMap = true }
                 )
                 selectedTab == 1 -> LotteriesScreen(
                     user = user,

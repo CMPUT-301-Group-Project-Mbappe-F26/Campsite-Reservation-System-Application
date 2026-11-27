@@ -67,6 +67,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.google.zxing:core:3.5.3")
+    // OpenStreetMap map for the campsite map (WOW factor); needs no API key.
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
